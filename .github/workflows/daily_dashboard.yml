@@ -2,12 +2,8 @@ name: 매크로 스트레스 리포트 v2
 
 on:
   schedule:
-    # KST 기준 스케줄 (UTC = KST - 9)
-    - cron: '30 23 * * 1-5'   # 평일 KST 08:30 (UTC 전날 23:30)
-    # 추가 원하면 아래 주석 해제:
-    # - cron: '0 5 * * 2-6'   # 평일 KST 14:00 (오후 추가 알림)
-
-  workflow_dispatch:            # 수동 실행 버튼 활성화
+    - cron: '30 23 * * 1-5'
+  workflow_dispatch:
 
 jobs:
   send-report:
@@ -15,31 +11,21 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: 📥 코드 체크아웃
+      - name: 코드 체크아웃
         uses: actions/checkout@v4
 
-      - name: 🐍 Python 3.11 설치
+      - name: Python 3.11 설치
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 📦 패키지 설치
+      - name: 패키지 설치
         run: |
-          pip install --upgrade pip
-          pip install \
-            yfinance \
-            pandas \
-            plotly \
-            requests \
-            kaleido
+          pip install yfinance pandas plotly requests kaleido
 
-      - name: 🚀 리포트 실행 & 텔레그램 전송
+      - name: 리포트 실행 & 텔레그램 전송
         env:
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FRED_API_KEY:     ${{ secrets.FRED_API_KEY }}
         run: python macro_dashboard.py
-
-      - name: 📋 실행 로그 확인
-        if: always()
-        run: echo "완료 시각 $(date '+%Y-%m-%d %H:%M:%S UTC')"
