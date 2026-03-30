@@ -1,5 +1,5 @@
 """
-매크로 스트레스 대시보드 v2 - 버그 수정판
+매크로 스트레스 대시보드 v2 - 한글폰트 + 차트 설명 추가판
 """
 
 import os
@@ -28,19 +28,31 @@ C = dict(
     text="#e6edf3", subtext="#8b949e",
 )
 
+# ── 차트 패널 설명 (영문) ────────────────────────────
+PANEL_DESC = {
+    "dxy_vix":    "DXY>104=dollar stress / VIX>25=fear zone",
+    "gold_silver":"Gold & Silver normalized to 100 / Ratio>80=silver cheap",
+    "credit":     "IG spread>1.5% / HY spread>4.5% = credit stress",
+    "em_fx":      "EM currencies vs USD (normalized) / rising=weakness",
+    "copper":     "Copper/Gold falling = recession signal / Copper/WTI falling = stagflation",
+    "oil":        "WTI>$90 = inflation risk / OVX>40 = oil market panic",
+    "inflation":  "BEI = breakeven inflation / Real rate<0 = gold bullish",
+    "spread":     "10Y-2Y<0 = inverted (recession leading indicator)",
+    "geo":        "ILS weak = Middle East stress / KSA down = Saudi risk / BDRY down = trade slowdown",
+}
+
 TICKERS = {
     "DXY":   "DX-Y.NYB",
     "10Y":   "^TNX",
     "2Y":    "^IRX",
-    "금":    "GLD",
-    "은":    "SLV",
+    "Gold":  "GLD",
+    "Silver":"SLV",
     "WTI":   "CL=F",
     "Brent": "BZ=F",
-    "구리":  "HG=F",
+    "Copper":"HG=F",
     "VIX":   "^VIX",
     "OVX":   "^OVX",
     "GVZ":   "^GVZ",
-    "VXEEM": "EEM",
     "EMB":   "EMB",
     "HYG":   "HYG",
     "LQD":   "LQD",
@@ -67,15 +79,19 @@ FRED_SERIES = {
     "ICSA":      "ICSA",
 }
 
+# ─────────────────────────────────────────────────────
+# 1. 데이터 수집
+# ─────────────────────────────────────────────────────
+
 def fetch_market(tickers):
-    print("📡 시장 데이터 수집 중...")
+    print("Market data collecting...")
     data = {}
     for label, ticker in tickers.items():
         try:
             df = yf.download(ticker, period=PERIOD, interval=INTERVAL,
                              progress=False, auto_adjust=True)
             if df.empty:
-                print(f"  ⚠️  {label} — 데이터 없음")
+                print(f"  [SKIP] {label}")
                 continue
             s = df["Close"]
             if isinstance(s, pd.DataFrame):
@@ -84,10 +100,11 @@ def fetch_market(tickers):
             if not isinstance(s, pd.Series):
                 s = pd.Series([float(s)], name=label)
             data[label] = s.dropna()
-            print(f"  ✅ {label}")
+            print(f"  [OK] {label}")
         except Exception as e:
-            print(f"  ❌ {label} — {e}")
+            print(f"  [ERR] {label} - {e}")
     return data
+
 
 def fetch_fred(series_id, label):
     if not FRED_API_KEY:
@@ -102,42 +119,52 @@ def fetch_fred(series_id, label):
             {o["date"]: float(o["value"]) for o in obs if o["value"] != "."},
             name=label)
         s.index = pd.to_datetime(s.index)
-        print(f"  ✅ FRED: {label}")
+        print(f"  [OK] FRED:{label}")
         return s.dropna()
     except Exception as e:
-        print(f"  ❌ FRED {label} — {e}")
+        print(f"  [ERR] FRED:{label} - {e}")
         return pd.Series(dtype=float, name=label)
 
+
 def fetch_all_fred():
-    print("\n📊 FRED 경제 지표 수집 중...")
+    print("FRED data collecting...")
     return {k: fetch_fred(v, k) for k, v in FRED_SERIES.items()}
+
+
+# ─────────────────────────────────────────────────────
+# 2. 파생 지표
+# ─────────────────────────────────────────────────────
 
 def safe_s(mkt, key):
     s = mkt.get(key, pd.Series(dtype=float))
-    if not isinstance(s, pd.Series):
-        return pd.Series(dtype=float)
-    return s.dropna()
+    return s.dropna() if isinstance(s, pd.Series) else pd.Series(dtype=float)
+
 
 def derive(mkt, fred):
     d = {}
     try:
         if "10Y" in mkt and "2Y" in mkt:
             d["TERM_SPREAD"] = safe_s(mkt,"10Y") - safe_s(mkt,"2Y")
-        if "금" in mkt and "은" in mkt:
-            d["GOLD_SILVER"] = safe_s(mkt,"금") / safe_s(mkt,"은")
-        if "구리" in mkt and "금" in mkt:
-            d["COPPER_GOLD"] = safe_s(mkt,"구리") / safe_s(mkt,"금")
-        if "구리" in mkt and "WTI" in mkt:
-            d["COPPER_WTI"] = safe_s(mkt,"구리") / safe_s(mkt,"WTI")
+        if "Gold" in mkt and "Silver" in mkt:
+            d["GOLD_SILVER"] = safe_s(mkt,"Gold") / safe_s(mkt,"Silver")
+        if "Copper" in mkt and "Gold" in mkt:
+            d["COPPER_GOLD"] = safe_s(mkt,"Copper") / safe_s(mkt,"Gold")
+        if "Copper" in mkt and "WTI" in mkt:
+            d["COPPER_WTI"]  = safe_s(mkt,"Copper") / safe_s(mkt,"WTI")
         if "Brent" in mkt and "WTI" in mkt:
-            d["BRENT_WTI"] = safe_s(mkt,"Brent") - safe_s(mkt,"WTI")
+            d["BRENT_WTI"]   = safe_s(mkt,"Brent") - safe_s(mkt,"WTI")
         bei = fred.get("BEI_10Y", pd.Series(dtype=float))
         if "10Y" in mkt and not bei.empty:
             t10 = safe_s(mkt, "10Y")
             d["REAL_RATE"] = t10 - bei.reindex(t10.index, method="ffill")
     except Exception as e:
-        print(f"  ⚠️  파생지표 오류: {e}")
+        print(f"  [WARN] derive error: {e}")
     return d
+
+
+# ─────────────────────────────────────────────────────
+# 3. 시그널
+# ─────────────────────────────────────────────────────
 
 def latest(s):
     if not isinstance(s, pd.Series): return None
@@ -163,7 +190,7 @@ def build_signals(mkt, fred, derived):
     dv = lambda k: derived.get(k, pd.Series(dtype=float))
 
     dxy=latest(m("DXY")); vix=latest(m("VIX")); ovx=latest(m("OVX"))
-    gvz=latest(m("GVZ")); vxeem=latest(m("VXEEM"))
+    gvz=latest(m("GVZ"))
     krw=latest(m("KRW")); try_r=latest(m("TRY")); zar=latest(m("ZAR"))
     brl=latest(m("BRL")); inr=latest(m("INR")); ils=latest(m("ILS"))
     emb_chg=pct_chg(m("EMB"),4); hyg=latest(m("HYG")); wti=latest(m("WTI"))
@@ -176,50 +203,50 @@ def build_signals(mkt, fred, derived):
     bei_5y=latest(f("BEI_5Y")); bei_10y=latest(f("BEI_10Y")); icsa=latest(f("ICSA"))
 
     return {
-        "🔴 유동성 & 달러 수요": [
-            ("DXY 달러인덱스",       dxy,      fmt(dxy),           sig(dxy,104)),
-            ("TED 스프레드(bp)",     ted,      fmt(ted,"",2),      sig(ted,0.5)),
-            ("RRP 8주 변화율",       rrp_chg,  fmt(rrp_chg,"%"),   sig(rrp_chg,-30,"below")),
+        "🔴 Liquidity & Dollar": [
+            ("DXY Dollar Index",     dxy,      fmt(dxy),           sig(dxy,104)),
+            ("TED Spread (bp)",      ted,      fmt(ted,"",2),      sig(ted,0.5)),
+            ("Fed RRP 8wk chg",      rrp_chg,  fmt(rrp_chg,"%"),   sig(rrp_chg,-30,"below")),
         ],
-        "🟠 신용 & 채권 스트레스": [
-            ("장단기 스프레드(10-2Y)",term_sp, fmt(term_sp,"%p",2),sig(term_sp,0,"below")),
-            ("IG 크레딧 스프레드",   ig_sp,    fmt(ig_sp,"%",2),   sig(ig_sp,1.5)),
-            ("HY 크레딧 스프레드",   hy_sp,    fmt(hy_sp,"%",2),   sig(hy_sp,4.5)),
-            ("EMB 4주 수익률",       emb_chg,  fmt(emb_chg,"%"),   sig(emb_chg,-3,"below")),
-            ("HYG 하이일드 ETF",     hyg,      fmt(hyg),           sig(hyg,75,"below")),
+        "🟠 Credit & Bond Stress": [
+            ("Term Spread (10-2Y)",  term_sp,  fmt(term_sp,"%p",2),sig(term_sp,0,"below")),
+            ("IG Credit Spread",     ig_sp,    fmt(ig_sp,"%",2),   sig(ig_sp,1.5)),
+            ("HY Credit Spread",     hy_sp,    fmt(hy_sp,"%",2),   sig(hy_sp,4.5)),
+            ("EMB 4wk Return",       emb_chg,  fmt(emb_chg,"%"),   sig(emb_chg,-3,"below")),
+            ("HYG Hi-Yield ETF",     hyg,      fmt(hyg),           sig(hyg,75,"below")),
         ],
-        "🟡 변동성 & 심리": [
-            ("VIX",                  vix,      fmt(vix),           sig(vix,25)),
-            ("OVX (원유변동성)",     ovx,      fmt(ovx),           sig(ovx,40)),
-            ("GVZ (금변동성)",       gvz,      fmt(gvz),           sig(gvz,20)),
-            ("VXEEM (신흥국변동성)", vxeem,    fmt(vxeem),         sig(vxeem,30)),
+        "🟡 Volatility & Sentiment": [
+            ("VIX (S&P500 Vol)",     vix,      fmt(vix),           sig(vix,25)),
+            ("OVX (Oil Vol)",        ovx,      fmt(ovx),           sig(ovx,40)),
+            ("GVZ (Gold Vol)",       gvz,      fmt(gvz),           sig(gvz,20)),
         ],
-        "🟢 실물 경기 선행": [
-            ("구리/금 비율",         cu_gold,  fmt(cu_gold,"",4),  sig(cu_gold,0.0018,"below")),
-            ("구리/WTI 비율",        cu_wti,   fmt(cu_wti,"",3),   sig(cu_wti,0.05,"below")),
-            ("BDRY 해운ETF 4주",     bdry_chg, fmt(bdry_chg,"%"),  sig(bdry_chg,-10,"below")),
-            ("주간 실업수당",        icsa,     f"{icsa/1000:.0f}K" if icsa else "N/A", sig(icsa,250000)),
+        "🟢 Real Economy Leading": [
+            ("Copper/Gold Ratio",    cu_gold,  fmt(cu_gold,"",4),  sig(cu_gold,0.0018,"below")),
+            ("Copper/WTI Ratio",     cu_wti,   fmt(cu_wti,"",3),   sig(cu_wti,0.05,"below")),
+            ("BDRY Shipping 4wk",    bdry_chg, fmt(bdry_chg,"%"),  sig(bdry_chg,-10,"below")),
+            ("Initial Jobless",      icsa,     f"{icsa/1000:.0f}K" if icsa else "N/A", sig(icsa,250000)),
         ],
-        "🔵 인플레 & 실질금리": [
-            ("5Y 기대인플레(BEI)",   bei_5y,   fmt(bei_5y,"%",2),  sig(bei_5y,3.0)),
-            ("10Y 기대인플레(BEI)",  bei_10y,  fmt(bei_10y,"%",2), sig(bei_10y,2.8)),
-            ("실질금리(10Y-BEI)",    real_rate,fmt(real_rate,"%",2),sig(real_rate,0,"below")),
-            ("금/은 비율",           gs_ratio, fmt(gs_ratio),      sig(gs_ratio,80)),
+        "🔵 Inflation & Real Rate": [
+            ("5Y Breakeven Infl",    bei_5y,   fmt(bei_5y,"%",2),  sig(bei_5y,3.0)),
+            ("10Y Breakeven Infl",   bei_10y,  fmt(bei_10y,"%",2), sig(bei_10y,2.8)),
+            ("Real Rate (10Y-BEI)",  real_rate,fmt(real_rate,"%",2),sig(real_rate,0,"below")),
+            ("Gold/Silver Ratio",    gs_ratio, fmt(gs_ratio),      sig(gs_ratio,80)),
         ],
-        "⚫ 지정학 (호르무즈 특화)": [
-            ("Brent-WTI 스프레드",   brent_wti,f"${brent_wti:.2f}" if brent_wti else "N/A", sig(brent_wti,5)),
-            ("WTI 원유",             wti,      f"${wti:.1f}" if wti else "N/A", sig(wti,90)),
-            ("USD/ILS (이스라엘)",   ils,      fmt(ils,"",3),      sig(ils,3.8)),
-            ("KSA 사우디ETF 4주",    ksa_chg,  fmt(ksa_chg,"%"),   sig(ksa_chg,-5,"below")),
+        "⚫ Geopolitical (Hormuz)": [
+            ("Brent-WTI Spread",     brent_wti,f"${brent_wti:.2f}" if brent_wti else "N/A", sig(brent_wti,5)),
+            ("WTI Crude",            wti,      f"${wti:.1f}" if wti else "N/A", sig(wti,90)),
+            ("USD/ILS (Israel)",     ils,      fmt(ils,"",3),      sig(ils,3.8)),
+            ("KSA Saudi ETF 4wk",    ksa_chg,  fmt(ksa_chg,"%"),   sig(ksa_chg,-5,"below")),
         ],
-        "🌏 신흥국 통화": [
-            ("USD/KRW",              krw,      fmt(krw,"",0),      sig(krw,1380)),
-            ("USD/TRY",              try_r,    fmt(try_r),         sig(try_r,35)),
-            ("USD/ZAR",              zar,      fmt(zar),           sig(zar,19)),
-            ("USD/BRL",              brl,      fmt(brl,"",2),      sig(brl,5.5)),
-            ("USD/INR",              inr,      fmt(inr),           sig(inr,85)),
+        "🌏 EM Currencies": [
+            ("USD/KRW (Korea)",      krw,      fmt(krw,"",0),      sig(krw,1380)),
+            ("USD/TRY (Turkey)",     try_r,    fmt(try_r),         sig(try_r,35)),
+            ("USD/ZAR (S.Africa)",   zar,      fmt(zar),           sig(zar,19)),
+            ("USD/BRL (Brazil)",     brl,      fmt(brl,"",2),      sig(brl,5.5)),
+            ("USD/INR (India)",      inr,      fmt(inr),           sig(inr,85)),
         ],
     }
+
 
 def count_alerts(signals):
     danger, total = 0, 0
@@ -229,153 +256,311 @@ def count_alerts(signals):
             if row[3] == "🔴": danger += 1
     return danger, total
 
+
 def overall_status(danger, total):
     r = danger / total if total else 0
-    if r >= 0.6:    return "🚨 극도 위험 — 복합 위기 신호"
-    elif r >= 0.4:  return "🔴 위험 — 다수 경보 점등"
-    elif r >= 0.25: return "⚠️ 주의 — 일부 스트레스 감지"
-    elif r >= 0.1:  return "🟡 관찰 — 소수 지표 이상"
-    else:           return "✅ 안정 — 주요 지표 정상권"
+    if r >= 0.6:    return "🚨 CRITICAL - Complex Crisis Signal"
+    elif r >= 0.4:  return "🔴 DANGER - Multiple Alerts Triggered"
+    elif r >= 0.25: return "⚠️ WARNING - Partial Stress Detected"
+    elif r >= 0.1:  return "🟡 WATCH - Minor Anomalies"
+    else:           return "✅ STABLE - Major Indicators Normal"
+
+
+# ─────────────────────────────────────────────────────
+# 4. 차트 생성
+# ─────────────────────────────────────────────────────
 
 def normalize(s):
     if not isinstance(s, pd.Series): return pd.Series(dtype=float)
     s = s.dropna()
     return (s / s.iloc[0] * 100) if len(s) else s
 
+
+def add_desc(fig, row, col, text):
+    """각 패널 하단에 설명 텍스트 추가"""
+    fig.add_annotation(
+        text=text,
+        xref=f"x{(row-1)*3+col} domain" if (row-1)*3+col > 1 else "x domain",
+        yref=f"y{(row-1)*3+col} domain" if (row-1)*3+col > 1 else "y domain",
+        x=0.5, y=-0.18,
+        showarrow=False,
+        font=dict(size=9, color=C["subtext"]),
+        xanchor="center",
+        row=row, col=col,
+    )
+
+
 def make_chart(mkt, derived, fred):
     m  = lambda k: mkt.get(k, pd.Series(dtype=float))
     dv = lambda k: derived.get(k, pd.Series(dtype=float))
     f  = lambda k: fred.get(k, pd.Series(dtype=float))
 
-    fig = make_subplots(rows=3, cols=3,
-        subplot_titles=["① DXY & VIX","② 금·은 & 금/은비율","③ 크레딧 스프레드",
-                        "④ 신흥국 통화","⑤ 구리/금·구리/WTI","⑥ WTI·Brent·OVX",
-                        "⑦ 기대인플레 & 실질금리","⑧ 장단기 스프레드","⑨ ILS·KSA·BDRY"],
-        vertical_spacing=0.10, horizontal_spacing=0.07)
+    # 영문 제목 (한글 폰트 깨짐 방지)
+    titles = [
+        "① DXY & VIX",
+        "② Gold vs Silver (normalized)",
+        "③ Credit Spreads (IG / HY)",
+        "④ EM Currencies (normalized)",
+        "⑤ Copper/Gold & Copper/WTI",
+        "⑥ WTI / Brent / OVX",
+        "⑦ Breakeven Inflation & Real Rate",
+        "⑧ Yield Curve Spread (10Y-2Y)",
+        "⑨ Geopolitical (ILS / KSA / BDRY)",
+    ]
+
+    fig = make_subplots(
+        rows=3, cols=3,
+        subplot_titles=titles,
+        vertical_spacing=0.13,
+        horizontal_spacing=0.07,
+    )
 
     def line(s, row, col, name, color, dash="solid"):
         if not isinstance(s, pd.Series): return
         s = s.dropna()
         if s.empty: return
-        fig.add_trace(go.Scatter(x=s.index, y=s.values, name=name,
-            line=dict(color=color, width=1.8, dash=dash)), row=row, col=col)
+        fig.add_trace(go.Scatter(
+            x=s.index, y=s.values, name=name,
+            line=dict(color=color, width=1.8, dash=dash),
+            hovertemplate=f"<b>{name}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:.2f}}<extra></extra>",
+        ), row=row, col=col)
 
     def bar(s, row, col):
         if not isinstance(s, pd.Series): return
         s = s.dropna()
         if s.empty: return
         colors = [C["green"] if v >= 0 else C["red"] for v in s.values]
-        fig.add_trace(go.Bar(x=s.index, y=s.values, marker_color=colors,
-            showlegend=False), row=row, col=col)
+        fig.add_trace(go.Bar(
+            x=s.index, y=s.values,
+            marker_color=colors, showlegend=False,
+            hovertemplate="<b>Spread</b><br>%{x|%Y-%m-%d}<br>%{y:.2f}%p<extra></extra>",
+        ), row=row, col=col)
 
-    line(m("DXY"),1,1,"DXY",C["blue"]); line(m("VIX"),1,1,"VIX",C["red"],"dot")
-    line(normalize(m("금")),1,2,"금",C["gold"])
-    line(normalize(m("은")),1,2,"은",C["silver"],"dot")
-    line(dv("GOLD_SILVER"),1,2,"금/은",C["orange"],"dash")
-    line(f("IG_SPREAD"),1,3,"IG",C["blue"]); line(f("HY_SPREAD"),1,3,"HY",C["red"],"dot")
-    for key,lbl,clr in [("KRW","원화",C["blue"]),("TRY","리라",C["red"]),
-                         ("ZAR","랜드",C["orange"]),("BRL","헤알",C["green"]),("INR","루피",C["purple"])]:
-        line(normalize(m(key)),2,1,lbl,clr)
-    line(dv("COPPER_GOLD"),2,2,"구리/금",C["cyan"]); line(dv("COPPER_WTI"),2,2,"구리/WTI",C["pink"],"dot")
-    line(m("WTI"),2,3,"WTI",C["orange"]); line(m("Brent"),2,3,"Brent",C["gold"],"dot"); line(m("OVX"),2,3,"OVX",C["red"],"dash")
-    line(f("BEI_5Y"),3,1,"5Y BEI",C["orange"]); line(f("BEI_10Y"),3,1,"10Y BEI",C["gold"],"dot")
-    line(dv("REAL_RATE"),3,1,"실질금리",C["red"],"dash")
-    fig.add_hline(y=0,line_dash="dash",line_color=C["subtext"],row=3,col=1)
-    bar(dv("TERM_SPREAD"),3,2)
-    fig.add_hline(y=0,line_dash="dash",line_color=C["subtext"],row=3,col=2)
-    line(normalize(m("ILS")),3,3,"ILS",C["blue"]); line(normalize(m("KSA")),3,3,"KSA",C["gold"],"dot")
-    line(normalize(m("BDRY")),3,3,"BDRY",C["cyan"],"dash")
+    # ① DXY & VIX
+    line(m("DXY"),              1,1,"DXY",      C["blue"])
+    line(m("VIX"),              1,1,"VIX",      C["red"],"dot")
+    fig.add_hline(y=104, line_dash="dash", line_color=C["orange"],
+                  annotation_text="DXY 104", annotation_font_size=9, row=1, col=1)
+    fig.add_hline(y=25,  line_dash="dash", line_color=C["red"],
+                  annotation_text="VIX 25",  annotation_font_size=9, row=1, col=1)
 
-    fig.update_layout(paper_bgcolor=C["bg"],plot_bgcolor=C["panel"],
-        font=dict(color=C["text"],size=10),height=1050,width=1300,
-        margin=dict(l=50,r=30,t=80,b=30),
-        title=dict(text=f"🌐 매크로 스트레스 대시보드 v2  |  {datetime.now().strftime('%Y-%m-%d')}",
-            font=dict(size=16,color=C["text"]),x=0.5),
-        legend=dict(bgcolor=C["panel"],bordercolor=C["border"],borderwidth=1,font=dict(size=9)))
+    # ② Gold vs Silver
+    line(normalize(m("Gold")),   1,2,"Gold",   C["gold"])
+    line(normalize(m("Silver")), 1,2,"Silver", C["silver"],"dot")
+    line(dv("GOLD_SILVER"),      1,2,"G/S Ratio",C["orange"],"dash")
+    fig.add_hline(y=80, line_dash="dash", line_color=C["red"],
+                  annotation_text="Ratio 80", annotation_font_size=9, row=1, col=2)
+
+    # ③ Credit Spreads
+    line(f("IG_SPREAD"), 1,3,"IG Spread", C["blue"])
+    line(f("HY_SPREAD"), 1,3,"HY Spread", C["red"],"dot")
+    fig.add_hline(y=1.5, line_dash="dash", line_color=C["orange"],
+                  annotation_text="IG 1.5%", annotation_font_size=9, row=1, col=3)
+    fig.add_hline(y=4.5, line_dash="dash", line_color=C["red"],
+                  annotation_text="HY 4.5%", annotation_font_size=9, row=1, col=3)
+
+    # ④ EM Currencies
+    for key,lbl,clr in [("KRW","KRW",C["blue"]),("TRY","TRY",C["red"]),
+                         ("ZAR","ZAR",C["orange"]),("BRL","BRL",C["green"]),
+                         ("INR","INR",C["purple"])]:
+        line(normalize(m(key)), 2,1, lbl, clr)
+
+    # ⑤ Copper Ratios
+    line(dv("COPPER_GOLD"), 2,2,"Cu/Gold", C["cyan"])
+    line(dv("COPPER_WTI"),  2,2,"Cu/WTI",  C["pink"],"dot")
+
+    # ⑥ Oil & OVX
+    line(m("WTI"),   2,3,"WTI",   C["orange"])
+    line(m("Brent"), 2,3,"Brent", C["gold"],"dot")
+    line(m("OVX"),   2,3,"OVX",   C["red"],"dash")
+    fig.add_hline(y=90, line_dash="dash", line_color=C["red"],
+                  annotation_text="WTI $90", annotation_font_size=9, row=2, col=3)
+
+    # ⑦ Inflation & Real Rate
+    line(f("BEI_5Y"),    3,1,"5Y BEI",    C["orange"])
+    line(f("BEI_10Y"),   3,1,"10Y BEI",   C["gold"],"dot")
+    line(dv("REAL_RATE"),3,1,"Real Rate", C["red"],"dash")
+    fig.add_hline(y=0, line_dash="dash", line_color=C["subtext"], row=3, col=1)
+    fig.add_hline(y=3.0, line_dash="dash", line_color=C["orange"],
+                  annotation_text="BEI 3%", annotation_font_size=9, row=3, col=1)
+
+    # ⑧ Yield Curve
+    bar(dv("TERM_SPREAD"), 3,2)
+    fig.add_hline(y=0, line_dash="dash", line_color=C["subtext"],
+                  annotation_text="Inversion", annotation_font_size=9, row=3, col=2)
+
+    # ⑨ Geopolitical
+    line(normalize(m("ILS")),  3,3,"ILS",  C["blue"])
+    line(normalize(m("KSA")),  3,3,"KSA",  C["gold"],"dot")
+    line(normalize(m("BDRY")), 3,3,"BDRY", C["cyan"],"dash")
+
+    # ── 설명 어노테이션 ──────────────────────────────
+    descs = [
+        (1,1, PANEL_DESC["dxy_vix"]),
+        (1,2, PANEL_DESC["gold_silver"]),
+        (1,3, PANEL_DESC["credit"]),
+        (2,1, PANEL_DESC["em_fx"]),
+        (2,2, PANEL_DESC["copper"]),
+        (2,3, PANEL_DESC["oil"]),
+        (3,1, PANEL_DESC["inflation"]),
+        (3,2, PANEL_DESC["spread"]),
+        (3,3, PANEL_DESC["geo"]),
+    ]
+    panel_idx = 1
+    for row, col, desc in descs:
+        xref = f"x{panel_idx} domain"
+        yref = f"y{panel_idx} domain"
+        fig.add_annotation(
+            text=desc,
+            xref=xref, yref=yref,
+            x=0.5, y=-0.22,
+            showarrow=False,
+            font=dict(size=8, color=C["subtext"]),
+            xanchor="center",
+        )
+        panel_idx += 1
+
+    # ── 레이아웃 ─────────────────────────────────────
+    fig.update_layout(
+        paper_bgcolor=C["bg"],
+        plot_bgcolor=C["panel"],
+        font=dict(
+            family="Arial, sans-serif",   # 영문 폰트 명시 (한글 깨짐 방지)
+            color=C["text"],
+            size=10,
+        ),
+        height=1150, width=1350,
+        margin=dict(l=55, r=35, t=90, b=60),
+        title=dict(
+            text=(f"Macro Stress Dashboard v2  |  "
+                  f"{datetime.now().strftime('%Y-%m-%d')}  |  "
+                  f"Stagflation & Dollar Cycle Monitor"),
+            font=dict(size=15, color=C["text"], family="Arial, sans-serif"),
+            x=0.5,
+        ),
+        legend=dict(
+            bgcolor=C["panel"], bordercolor=C["border"],
+            borderwidth=1, font=dict(size=9),
+        ),
+    )
+
+    # subplot 제목 스타일
     for ann in fig.layout.annotations:
-        ann.font.size=11; ann.font.color=C["subtext"]
-    fig.update_xaxes(gridcolor=C["border"],zeroline=False)
-    fig.update_yaxes(gridcolor=C["border"],zeroline=False)
+        if ann.text in titles:
+            ann.font = dict(size=11, color="#adbac7", family="Arial, sans-serif")
+        else:
+            ann.font = dict(size=8, color=C["subtext"], family="Arial, sans-serif")
+
+    fig.update_xaxes(gridcolor=C["border"], zeroline=False,
+                     tickfont=dict(size=9, family="Arial, sans-serif"))
+    fig.update_yaxes(gridcolor=C["border"], zeroline=False,
+                     tickfont=dict(size=9, family="Arial, sans-serif"))
+
     fig.write_image(CHART_FILE, scale=2)
-    print("  ✅ 차트 저장 완료")
+    print("  [OK] Chart saved")
     return CHART_FILE
+
+
+# ─────────────────────────────────────────────────────
+# 5. 텔레그램
+# ─────────────────────────────────────────────────────
 
 def tg_text(text):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        r = requests.post(url, data={"chat_id":TELEGRAM_CHAT_ID,"text":text,"parse_mode":"HTML"}, timeout=15)
-        print(f"  텍스트 전송: {r.status_code} {r.text[:100]}")
+        r = requests.post(url, data={
+            "chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"
+        }, timeout=15)
+        print(f"  Text sent: {r.status_code}")
     except Exception as e:
-        print(f"  ❌ 텍스트 전송 실패: {e}")
+        print(f"  [ERR] text: {e}")
 
 def tg_photo(path):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         with open(path, "rb") as f:
-            r = requests.post(url, data={"chat_id":TELEGRAM_CHAT_ID,
-                "caption":f"매크로 차트 | {datetime.now().strftime('%Y-%m-%d')}"},
-                files={"photo":f}, timeout=30)
-        print(f"  사진 전송: {r.status_code} {r.text[:100]}")
+            r = requests.post(url, data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "caption": f"Macro Chart | {datetime.now().strftime('%Y-%m-%d')}",
+            }, files={"photo": f}, timeout=30)
+        print(f"  Photo sent: {r.status_code}")
     except Exception as e:
-        print(f"  ❌ 사진 전송 실패: {e}")
+        print(f"  [ERR] photo: {e}")
+
+
+# ─────────────────────────────────────────────────────
+# 6. 메시지 포맷 (텔레그램용 — 이모지 유지)
+# ─────────────────────────────────────────────────────
 
 def format_message(signals, danger, total):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    lines = [
-        f"📊 <b>매크로 스트레스 리포트 v2</b>",
-        f"🕐 {now}",
-        f"종합: {overall_status(danger, total)}",
-        f"경보: <b>{danger}/{total}</b>개 점등",
+    now    = datetime.now().strftime("%Y-%m-%d %H:%M")
+    status = overall_status(danger, total)
+    lines  = [
+        f"📊 <b>Macro Stress Report v2</b>",
+        f"🕐 {now} (KST)",
+        f"Status: {status}",
+        f"Alerts: <b>{danger}/{total}</b>",
         "━━━━━━━━━━━━━━━━━━━━━",
     ]
     for cat, items in signals.items():
         lines.append(f"\n<b>{cat}</b>")
         for name, _, val_str, s in items:
             lines.append(f"  {s} {name}: <b>{val_str}</b>")
-    lines += ["","━━━━━━━━━━━━━━━━━━━━━",
-        "🎯 <b>피벗 트리거 체크</b>",
-        "• TED &gt; 0.5bp",
-        "• RRP 8주 -30% 급감",
-        "• IG 스프레드 &gt; 1.5%",
-        "• 신흥국 통화 3개국+ 동시 약세",
-        "• VIX&gt;30 + OVX&gt;40 동시"]
+    lines += [
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━",
+        "🎯 <b>Fed Pivot Trigger Checklist</b>",
+        "• TED Spread &gt; 0.5bp",
+        "• Fed RRP 8wk -30% drain",
+        "• IG Spread &gt; 1.5%",
+        "• 3+ EM currencies simultaneous weakening",
+        "• VIX&gt;30 + OVX&gt;40 simultaneously",
+        "• Copper/Gold ratio declining trend",
+    ]
     return "\n".join(lines)
 
+
+# ─────────────────────────────────────────────────────
+# 7. 메인
+# ─────────────────────────────────────────────────────
+
 def run():
-    print("="*55)
-    print(f"  매크로 대시보드 v2  |  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*55)
-    mkt = fetch_market(TICKERS)
-    fred = fetch_all_fred()
+    print("=" * 55)
+    print(f"  Macro Dashboard v2  |  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 55)
+
+    mkt     = fetch_market(TICKERS)
+    fred    = fetch_all_fred()
     derived = derive(mkt, fred)
     signals = build_signals(mkt, fred, derived)
     danger, total = count_alerts(signals)
 
     print(f"\n{'='*55}")
-    print(f"  종합: {overall_status(danger, total)}")
-    print(f"  경보: {danger}/{total}")
+    print(f"  Status: {overall_status(danger, total)}")
+    print(f"  Alerts: {danger}/{total}")
     print(f"{'='*55}")
     for cat, items in signals.items():
         print(f"\n{cat}")
         for name, _, val_str, s in items:
             print(f"  {s} {name}: {val_str}")
 
-    print("\n📈 차트 생성 중...")
+    print("\n[Chart generating...]")
     chart_ok = False
     try:
         make_chart(mkt, derived, fred)
         chart_ok = True
     except Exception as e:
-        print(f"  ⚠️  차트 실패: {e}")
+        print(f"  [WARN] Chart failed: {e}")
 
-    print("\n📨 텔레그램 전송 중...")
-    print(f"  TOKEN: {'설정됨' if TELEGRAM_TOKEN else '❌ 없음'}")
-    print(f"  CHAT_ID: {'설정됨' if TELEGRAM_CHAT_ID else '❌ 없음'}")
+    print("\n[Telegram sending...]")
+    print(f"  TOKEN:   {'SET' if TELEGRAM_TOKEN else 'MISSING'}")
+    print(f"  CHAT_ID: {'SET' if TELEGRAM_CHAT_ID else 'MISSING'}")
 
     if chart_ok:
         tg_photo(CHART_FILE)
     tg_text(format_message(signals, danger, total))
-    print(f"\n✅ 완료 — 경보 {danger}/{total}")
+    print(f"\n[DONE] Alerts {danger}/{total}")
+
 
 if __name__ == "__main__":
     run()
