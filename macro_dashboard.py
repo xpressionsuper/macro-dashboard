@@ -346,7 +346,7 @@ def make_all_charts(mkt, derived, fred):
     paths = []
 
     # ① DXY & VIX
-    fig = base_fig("① DXY & VIX",
+    fig = base_fig("1. DXY & VIX",
                    "DXY>104 = dollar stress  |  VIX>25 = fear zone  |  VIX>30 = panic")
     add_line(fig, m("DXY"), "DXY", C["blue"])
     add_line(fig, m("VIX"), "VIX", C["red"], "dot")
@@ -356,7 +356,7 @@ def make_all_charts(mkt, derived, fred):
     paths.append(save(fig, "01_dxy_vix.png"))
 
     # ② Gold vs Silver
-    fig = base_fig("② Gold vs Silver (normalized to 100)",
+    fig = base_fig("2. Gold vs Silver (normalized to 100)",
                    "G/S Ratio > 80 = silver undervalued  |  divergence = stress signal")
     add_line(fig, normalize(m("Gold")),   "Gold (norm)",    C["gold"])
     add_line(fig, normalize(m("Silver")), "Silver (norm)",  C["silver"], "dot")
@@ -365,7 +365,7 @@ def make_all_charts(mkt, derived, fred):
     paths.append(save(fig, "02_gold_silver.png"))
 
     # ③ Credit Spreads
-    fig = base_fig("③ Credit Spreads",
+    fig = base_fig("3. Credit Spreads",
                    "IG > 1.5% = investment grade stress  |  HY > 4.5% = high yield stress")
     add_line(fig, f("IG_SPREAD"), "IG Spread (%)", C["blue"])
     add_line(fig, f("HY_SPREAD"), "HY Spread (%)", C["red"], "dot")
@@ -374,7 +374,7 @@ def make_all_charts(mkt, derived, fred):
     paths.append(save(fig, "03_credit_spreads.png"))
 
     # ④ EM Currencies
-    fig = base_fig("④ EM Currencies vs USD (normalized to 100)",
+    fig = base_fig("4. EM Currencies vs USD (normalized to 100)",
                    "Rising = EM currency weakening  |  3+ simultaneous = Fed pivot signal")
     for key, lbl, clr in [
         ("KRW","KRW (Korea)",   C["blue"]),
@@ -387,24 +387,89 @@ def make_all_charts(mkt, derived, fred):
     paths.append(save(fig, "04_em_currencies.png"))
 
     # ⑤ Copper Ratios
-    fig = base_fig("⑤ Copper/Gold & Copper/WTI Ratio",
+    fig = base_fig("5. Copper/Gold & Copper/WTI Ratio",
                    "Cu/Gold falling = recession leading  |  Cu/WTI falling = stagflation signal")
     add_line(fig, dv("COPPER_GOLD"), "Copper/Gold", C["cyan"])
     add_line(fig, dv("COPPER_WTI"),  "Copper/WTI",  C["pink"], "dot")
     paths.append(save(fig, "05_copper_ratios.png"))
 
-    # ⑥ Oil & OVX
-    fig = base_fig("⑥ Oil (WTI / Brent) & OVX",
-                   "WTI > $90 = inflation risk  |  OVX > 40 = oil market panic  |  Brent-WTI > $5 = supply disruption")
-    add_line(fig, m("WTI"),   "WTI ($)",   C["orange"])
-    add_line(fig, m("Brent"), "Brent ($)", C["gold"], "dot")
-    add_line(fig, m("OVX"),   "OVX",       C["red"],  "dash")
-    hline(fig, 90, C["red"],    "WTI $90")
-    hline(fig, 40, C["orange"], "OVX 40")
+    # ⑥ Oil & OVX — 이중 Y축 (가격 vs 변동성 스케일 분리)
+    fig = go.Figure()
+    fig.update_layout(
+        paper_bgcolor=C["bg"],
+        plot_bgcolor=C["panel"],
+        font=dict(family="Arial, sans-serif", color=C["text"], size=11),
+        height=420, width=820,
+        margin=dict(l=60, r=200, t=70, b=50),
+        title=dict(
+            text=(f"<b>6. Oil Price (WTI / Brent) & OVX Volatility</b><br>"
+                  f"<sup style='color:{C['subtext']}'>"
+                  f"WTI &gt; $90 = inflation risk  |  OVX &gt; 40 = panic  |  "
+                  f"Brent-WTI &gt; $5 = supply disruption"
+                  f"</sup>"),
+            font=dict(size=13, color=C["text"]),
+            x=0.02, xanchor="left",
+        ),
+        legend=dict(
+            bgcolor="rgba(22,27,34,0.9)",
+            bordercolor=C["border"],
+            borderwidth=1,
+            font=dict(size=10),
+            x=1.02, y=1.0,
+            xanchor="left", yanchor="top",
+            orientation="v",
+        ),
+        # 왼쪽 Y축 — 가격 ($)
+        yaxis=dict(
+            title=dict(text="Price ($)", font=dict(color=C["orange"], size=10)),
+            gridcolor=C["border"], zeroline=False,
+            tickfont=dict(size=9, color=C["orange"]),
+        ),
+        # 오른쪽 Y축 — OVX 변동성
+        yaxis2=dict(
+            title=dict(text="OVX (Volatility)", font=dict(color=C["red"], size=10)),
+            overlaying="y",
+            side="right",
+            gridcolor="rgba(0,0,0,0)",
+            zeroline=False,
+            tickfont=dict(size=9, color=C["red"]),
+        ),
+        xaxis=dict(gridcolor=C["border"], zeroline=False, tickfont=dict(size=9)),
+    )
+
+    # WTI & Brent → 왼쪽 축
+    for s_key, name, color, dash in [
+        ("WTI",   "WTI ($)",   C["orange"], "solid"),
+        ("Brent", "Brent ($)", C["gold"],   "dot"),
+    ]:
+        s = m(s_key).dropna()
+        if not s.empty:
+            fig.add_trace(go.Scatter(
+                x=s.index, y=s.values, name=name,
+                line=dict(color=color, width=2, dash=dash),
+                yaxis="y",
+                hovertemplate=f"<b>{name}</b><br>%{{x|%Y-%m-%d}}<br>${{y:.1f}}<extra></extra>",
+            ))
+
+    # OVX → 오른쪽 축
+    ovx_s = m("OVX").dropna()
+    if not ovx_s.empty:
+        fig.add_trace(go.Scatter(
+            x=ovx_s.index, y=ovx_s.values, name="OVX (vol)",
+            line=dict(color=C["red"], width=2, dash="dash"),
+            yaxis="y2",
+            hovertemplate="<b>OVX</b><br>%{x|%Y-%m-%d}<br>%{y:.1f}<extra></extra>",
+        ))
+
+    # 임계선
+    fig.add_hline(y=90, line_dash="dash", line_color=C["red"], line_width=1,
+                  annotation_text="WTI $90", annotation_font_size=9,
+                  annotation_font_color=C["red"], annotation_position="top left",
+                  yref="y")
     paths.append(save(fig, "06_oil_ovx.png"))
 
     # ⑦ Inflation & Real Rate
-    fig = base_fig("⑦ Breakeven Inflation & Real Rate",
+    fig = base_fig("7. Breakeven Inflation & Real Rate",
                    "BEI > 3% = inflation expectations elevated  |  Real Rate < 0 = gold bullish environment")
     add_line(fig, f("BEI_5Y"),     "5Y BEI (%)",    C["orange"])
     add_line(fig, f("BEI_10Y"),    "10Y BEI (%)",   C["gold"], "dot")
@@ -414,14 +479,14 @@ def make_all_charts(mkt, derived, fred):
     paths.append(save(fig, "07_inflation_realrate.png"))
 
     # ⑧ Yield Curve
-    fig = base_fig("⑧ Yield Curve Spread (10Y - 2Y)",
+    fig = base_fig("8. Yield Curve Spread (10Y - 2Y)",
                    "Below 0 = inverted curve = recession leading indicator (avg 12-18mo lead)")
     add_bar(fig, dv("TERM_SPREAD"), "10Y-2Y Spread")
     hline(fig, 0, C["subtext"], "Inversion Line")
     paths.append(save(fig, "08_yield_curve.png"))
 
     # ⑨ Geopolitical
-    fig = base_fig("⑨ Geopolitical Monitor (normalized to 100)",
+    fig = base_fig("9. Geopolitical Monitor (normalized to 100)",
                    "ILS/KSA falling = Middle East stress  |  BDRY falling = global trade slowdown")
     add_line(fig, normalize(m("ILS")),  "ILS (Israel Shekel)", C["blue"])
     add_line(fig, normalize(m("KSA")),  "KSA (Saudi ETF)",     C["gold"], "dot")
