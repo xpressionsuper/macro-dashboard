@@ -347,7 +347,7 @@ def make_all_charts(mkt, derived, fred):
 
     # ① DXY & VIX
     fig = base_fig("1. DXY & VIX",
-                   "DXY>104 = dollar stress  |  VIX>25 = fear zone  |  VIX>30 = panic")
+                   "DXY above 104 = dollar stress  |  VIX above 25 = fear  |  VIX above 30 = panic")
     add_line(fig, m("DXY"), "DXY", C["blue"])
     add_line(fig, m("VIX"), "VIX", C["red"], "dot")
     hline(fig, 104, C["orange"], "DXY 104")
@@ -357,7 +357,7 @@ def make_all_charts(mkt, derived, fred):
 
     # ② Gold vs Silver
     fig = base_fig("2. Gold vs Silver (normalized to 100)",
-                   "G/S Ratio > 80 = silver undervalued  |  divergence = stress signal")
+                   "G/S Ratio above 80 = silver undervalued  |  divergence = stress signal")
     add_line(fig, normalize(m("Gold")),   "Gold (norm)",    C["gold"])
     add_line(fig, normalize(m("Silver")), "Silver (norm)",  C["silver"], "dot")
     add_line(fig, dv("GOLD_SILVER"),      "Gold/Silver Ratio", C["orange"], "dash")
@@ -366,7 +366,7 @@ def make_all_charts(mkt, derived, fred):
 
     # ③ Credit Spreads
     fig = base_fig("3. Credit Spreads",
-                   "IG > 1.5% = investment grade stress  |  HY > 4.5% = high yield stress")
+                   "IG above 1.5% = investment grade stress  |  HY above 4.5% = high yield stress")
     add_line(fig, f("IG_SPREAD"), "IG Spread (%)", C["blue"])
     add_line(fig, f("HY_SPREAD"), "HY Spread (%)", C["red"], "dot")
     hline(fig, 1.5, C["orange"], "IG 1.5%")
@@ -402,11 +402,7 @@ def make_all_charts(mkt, derived, fred):
         height=420, width=820,
         margin=dict(l=60, r=200, t=70, b=50),
         title=dict(
-            text=(f"<b>6. Oil Price (WTI / Brent) & OVX Volatility</b><br>"
-                  f"<sup style='color:{C['subtext']}'>"
-                  f"WTI &gt; $90 = inflation risk  |  OVX &gt; 40 = panic  |  "
-                  f"Brent-WTI &gt; $5 = supply disruption"
-                  f"</sup>"),
+            text="<b>6. Oil Price (WTI / Brent) & OVX Volatility</b>",
             font=dict(size=13, color=C["text"]),
             x=0.02, xanchor="left",
         ),
@@ -466,11 +462,21 @@ def make_all_charts(mkt, derived, fred):
                   annotation_text="WTI $90", annotation_font_size=9,
                   annotation_font_color=C["red"], annotation_position="top left",
                   yref="y")
+
+    # subtitle annotation (제목 아래 설명)
+    fig.add_annotation(
+        text="WTI above $90 = inflation risk  |  OVX above 40 = panic  |  Brent-WTI above $5 = supply disruption",
+        xref="paper", yref="paper",
+        x=0.0, y=1.055,
+        showarrow=False,
+        font=dict(size=9, color=C["subtext"], family="Arial, sans-serif"),
+        xanchor="left", yanchor="bottom",
+    )
     paths.append(save(fig, "06_oil_ovx.png"))
 
     # ⑦ Inflation & Real Rate
     fig = base_fig("7. Breakeven Inflation & Real Rate",
-                   "BEI > 3% = inflation expectations elevated  |  Real Rate < 0 = gold bullish environment")
+                   "BEI above 3% = elevated inflation expectations  |  Real Rate below 0 = gold bullish")
     add_line(fig, f("BEI_5Y"),     "5Y BEI (%)",    C["orange"])
     add_line(fig, f("BEI_10Y"),    "10Y BEI (%)",   C["gold"], "dot")
     add_line(fig, dv("REAL_RATE"), "Real Rate (%)", C["red"],  "dash")
