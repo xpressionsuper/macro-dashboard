@@ -39,7 +39,7 @@ jobs:
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FRED_API_KEY:     ${{ secrets.FRED_API_KEY }}
-        run: python send_macro_report_v2.py
+        run: python macro_dashboard.py
 
       - name: 📋 실행 로그 확인
         if: always()
