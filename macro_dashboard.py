@@ -20,7 +20,7 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────
 # ⚙️  설정 — 환경변수 우선, 없으면 직접 입력
 # ─────────────────────────────────────────────────────
-TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",   "여기에_봇_토큰")
+TELEGRAM_BOT_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN",   "여기에_봇_토큰")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "여기에_chat_id")
 FRED_API_KEY     = os.environ.get("FRED_API_KEY",     "여기에_FRED_키")
 
@@ -446,7 +446,7 @@ def make_chart(mkt: dict, derived: dict, fred: dict) -> str:
 # ─────────────────────────────────────────────────────
 
 def tg_text(text: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     requests.post(url, data={
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
@@ -454,7 +454,7 @@ def tg_text(text: str):
     }, timeout=15)
 
 def tg_photo(path: str, caption: str = ""):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     with open(path, "rb") as f:
         requests.post(url, data={
             "chat_id": TELEGRAM_CHAT_ID,
