@@ -40,7 +40,7 @@ TICKERS = {
     "VIX":   "^VIX",
     "OVX":   "^OVX",
     "GVZ":   "^GVZ",
-    "VXEEM": "VXEEM",
+    "VXEEM": "EEM",
     "EMB":   "EMB",
     "HYG":   "HYG",
     "LQD":   "LQD",
