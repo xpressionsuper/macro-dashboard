@@ -1,37 +1,46 @@
-name: Daily Macro Dashboard
+name: 매크로 스트레스 리포트 v2
 
 on:
   schedule:
-    # 매일 08:30 KST = 23:30 UTC (전날)
-    - cron: "30 23 * * *"
-  workflow_dispatch:  # 수동 실행 허용
+    # KST 기준 스케줄 (UTC = KST - 9)
+    - cron: '30 23 * * 1-5'   # 평일 KST 08:30 (UTC 전날 23:30)
+    # 추가 원하면 아래 주석 해제:
+    # - cron: '0 5 * * 2-6'   # 평일 KST 14:00 (오후 추가 알림)
+
+  workflow_dispatch:            # 수동 실행 버튼 활성화
 
 jobs:
-  run-dashboard:
+  send-report:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
+      - name: 📥 코드 체크아웃
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: 🐍 Python 3.11 설치
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install dependencies
-        run: pip install yfinance pandas plotly requests
+      - name: 📦 패키지 설치
+        run: |
+          pip install --upgrade pip
+          pip install \
+            yfinance \
+            pandas \
+            plotly \
+            requests \
+            kaleido
 
-      - name: Run macro dashboard
+      - name: 🚀 리포트 실행 & 텔레그램 전송
         env:
-          FRED_API_KEY:         ${{ secrets.FRED_API_KEY }}
-          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python macro_dashboard.py
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FRED_API_KEY:     ${{ secrets.FRED_API_KEY }}
+        run: python send_macro_report_v2.py
 
-      - name: Upload dashboard HTML as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macro_dashboard_${{ github.run_id }}
-          path: macro_dashboard.html
-          retention-days: 7
+      - name: 📋 실행 로그 확인
+        if: always()
+        run: echo "완료 시각 $(date '+%Y-%m-%d %H:%M:%S UTC')"
