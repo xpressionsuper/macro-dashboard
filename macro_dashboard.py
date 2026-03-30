@@ -1,5 +1,5 @@
 """
-매크로 스트레스 대시보드 v2 - 차트 어노테이션 수정판
+매크로 스트레스 대시보드 v2 - 개별 차트 9장 전송판
 """
 
 import os
@@ -7,7 +7,6 @@ import requests
 import pandas as pd
 import yfinance as yf
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings("ignore")
@@ -18,7 +17,7 @@ FRED_API_KEY     = os.environ.get("FRED_API_KEY",     "")
 
 PERIOD     = "1y"
 INTERVAL   = "1wk"
-CHART_FILE = "/tmp/macro_chart_v2.png"
+CHART_DIR  = "/tmp/macro_charts"
 
 C = dict(
     bg="#0d1117", panel="#161b22", border="#30363d",
@@ -65,19 +64,6 @@ FRED_SERIES = {
     "BEI_10Y":   "T10YIE",
     "ICSA":      "ICSA",
 }
-
-# 패널 설명 — 제목에 포함 (줄바꿈)
-PANEL_TITLES = [
-    "① DXY & VIX<br><sub>DXY>104=dollar stress | VIX>25=fear</sub>",
-    "② Gold vs Silver (normalized)<br><sub>G/S Ratio>80 = silver undervalued</sub>",
-    "③ Credit Spreads<br><sub>IG>1.5% | HY>4.5% = credit stress</sub>",
-    "④ EM Currencies (normalized)<br><sub>Rising = EM currency weakness vs USD</sub>",
-    "⑤ Copper Ratios<br><sub>Cu/Gold down=recession | Cu/WTI down=stagflation</sub>",
-    "⑥ Oil & Volatility<br><sub>WTI>$90=inflation risk | OVX>40=panic</sub>",
-    "⑦ Inflation & Real Rate<br><sub>BEI=breakeven infl | Real Rate<0=gold bullish</sub>",
-    "⑧ Yield Curve (10Y-2Y)<br><sub>Below 0 = inverted = recession leading signal</sub>",
-    "⑨ Geopolitical Monitor<br><sub>ILS/KSA weak=Mid-East stress | BDRY down=trade slump</sub>",
-]
 
 # ─────────────────────────────────────────────────────
 # 1. 데이터 수집
@@ -259,16 +245,82 @@ def count_alerts(signals):
 
 def overall_status(danger, total):
     r = danger / total if total else 0
-    if r >= 0.6:    return "🚨 CRITICAL - Complex Crisis Signal"
-    elif r >= 0.4:  return "🔴 DANGER - Multiple Alerts Triggered"
-    elif r >= 0.25: return "⚠️ WARNING - Partial Stress Detected"
-    elif r >= 0.1:  return "🟡 WATCH - Minor Anomalies"
-    else:           return "✅ STABLE - Major Indicators Normal"
+    if r >= 0.6:    return "🚨 CRITICAL"
+    elif r >= 0.4:  return "🔴 DANGER"
+    elif r >= 0.25: return "⚠️ WARNING"
+    elif r >= 0.1:  return "🟡 WATCH"
+    else:           return "✅ STABLE"
 
 
 # ─────────────────────────────────────────────────────
-# 4. 차트 생성
+# 4. 개별 차트 생성 헬퍼
 # ─────────────────────────────────────────────────────
+
+def base_fig(title, desc):
+    """공통 레이아웃 기반 figure 생성"""
+    fig = go.Figure()
+    fig.update_layout(
+        paper_bgcolor=C["bg"],
+        plot_bgcolor=C["panel"],
+        font=dict(family="Arial, sans-serif", color=C["text"], size=11),
+        height=420, width=820,
+        margin=dict(l=60, r=200, t=70, b=50),  # 우측 여백을 넓혀 레전드 배치
+        title=dict(
+            text=f"<b>{title}</b><br><sup style='color:{C['subtext']}'>{desc}</sup>",
+            font=dict(size=13, color=C["text"]),
+            x=0.02, xanchor="left",
+        ),
+        legend=dict(
+            bgcolor="rgba(22,27,34,0.9)",
+            bordercolor=C["border"],
+            borderwidth=1,
+            font=dict(size=10),
+            x=1.02,           # 차트 오른쪽 바깥
+            y=1.0,
+            xanchor="left",
+            yanchor="top",
+            orientation="v",  # 세로 나열
+        ),
+        xaxis=dict(gridcolor=C["border"], zeroline=False,
+                   tickfont=dict(size=9)),
+        yaxis=dict(gridcolor=C["border"], zeroline=False,
+                   tickfont=dict(size=9)),
+    )
+    return fig
+
+
+def add_line(fig, s, name, color, dash="solid"):
+    if not isinstance(s, pd.Series): return
+    s = s.dropna()
+    if s.empty: return
+    fig.add_trace(go.Scatter(
+        x=s.index, y=s.values, name=name,
+        line=dict(color=color, width=2, dash=dash),
+        hovertemplate=f"<b>{name}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:.3f}}<extra></extra>",
+    ))
+
+
+def add_bar(fig, s, name):
+    if not isinstance(s, pd.Series): return
+    s = s.dropna()
+    if s.empty: return
+    colors = [C["green"] if v >= 0 else C["red"] for v in s.values]
+    fig.add_trace(go.Bar(
+        x=s.index, y=s.values, name=name,
+        marker_color=colors,
+        hovertemplate="<b>Spread</b><br>%{x|%Y-%m-%d}<br>%{y:.2f}%p<extra></extra>",
+    ))
+
+
+def hline(fig, y, color, label=""):
+    fig.add_hline(
+        y=y, line_dash="dash", line_color=color, line_width=1,
+        annotation_text=label,
+        annotation_font_size=9,
+        annotation_font_color=color,
+        annotation_position="top right",
+    )
+
 
 def normalize(s):
     if not isinstance(s, pd.Series): return pd.Series(dtype=float)
@@ -276,162 +328,174 @@ def normalize(s):
     return (s / s.iloc[0] * 100) if len(s) else s
 
 
-def make_chart(mkt, derived, fred):
-    m  = lambda k: mkt.get(k, pd.Series(dtype=float))
-    dv = lambda k: derived.get(k, pd.Series(dtype=float))
-    f  = lambda k: fred.get(k, pd.Series(dtype=float))
-
-    fig = make_subplots(
-        rows=3, cols=3,
-        subplot_titles=PANEL_TITLES,
-        vertical_spacing=0.14,
-        horizontal_spacing=0.08,
-    )
-
-    def line(s, row, col, name, color, dash="solid"):
-        if not isinstance(s, pd.Series): return
-        s = s.dropna()
-        if s.empty: return
-        fig.add_trace(go.Scatter(
-            x=s.index, y=s.values, name=name,
-            line=dict(color=color, width=1.8, dash=dash),
-            hovertemplate=f"<b>{name}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:.2f}}<extra></extra>",
-        ), row=row, col=col)
-
-    def bar(s, row, col):
-        if not isinstance(s, pd.Series): return
-        s = s.dropna()
-        if s.empty: return
-        colors = [C["green"] if v >= 0 else C["red"] for v in s.values]
-        fig.add_trace(go.Bar(
-            x=s.index, y=s.values,
-            marker_color=colors, showlegend=False,
-        ), row=row, col=col)
-
-    def hline(y, row, col, color, label=""):
-        fig.add_hline(
-            y=y, line_dash="dash", line_color=color,
-            line_width=1,
-            annotation_text=label,
-            annotation_font_size=8,
-            annotation_font_color=color,
-            row=row, col=col,
-        )
-
-    # ① DXY & VIX
-    line(m("DXY"), 1,1,"DXY", C["blue"])
-    line(m("VIX"), 1,1,"VIX", C["red"],"dot")
-    hline(104, 1,1, C["orange"], "DXY 104")
-    hline(25,  1,1, C["red"],    "VIX 25")
-
-    # ② Gold vs Silver
-    line(normalize(m("Gold")),   1,2,"Gold",     C["gold"])
-    line(normalize(m("Silver")), 1,2,"Silver",   C["silver"],"dot")
-    line(dv("GOLD_SILVER"),      1,2,"G/S Ratio",C["orange"],"dash")
-    hline(80, 1,2, C["red"], "Ratio 80")
-
-    # ③ Credit Spreads
-    line(f("IG_SPREAD"), 1,3,"IG Spread", C["blue"])
-    line(f("HY_SPREAD"), 1,3,"HY Spread", C["red"],"dot")
-    hline(1.5, 1,3, C["orange"], "IG 1.5%")
-    hline(4.5, 1,3, C["red"],    "HY 4.5%")
-
-    # ④ EM Currencies
-    for key,lbl,clr in [("KRW","KRW",C["blue"]),("TRY","TRY",C["red"]),
-                         ("ZAR","ZAR",C["orange"]),("BRL","BRL",C["green"]),
-                         ("INR","INR",C["purple"])]:
-        line(normalize(m(key)), 2,1, lbl, clr)
-
-    # ⑤ Copper Ratios
-    line(dv("COPPER_GOLD"), 2,2,"Cu/Gold", C["cyan"])
-    line(dv("COPPER_WTI"),  2,2,"Cu/WTI",  C["pink"],"dot")
-
-    # ⑥ Oil & OVX
-    line(m("WTI"),   2,3,"WTI",   C["orange"])
-    line(m("Brent"), 2,3,"Brent", C["gold"],"dot")
-    line(m("OVX"),   2,3,"OVX",   C["red"],"dash")
-    hline(90,  2,3, C["red"],    "WTI $90")
-    hline(40,  2,3, C["orange"], "OVX 40")
-
-    # ⑦ Inflation & Real Rate
-    line(f("BEI_5Y"),    3,1,"5Y BEI",    C["orange"])
-    line(f("BEI_10Y"),   3,1,"10Y BEI",   C["gold"],"dot")
-    line(dv("REAL_RATE"),3,1,"Real Rate", C["red"],"dash")
-    hline(0,   3,1, C["subtext"], "")
-    hline(3.0, 3,1, C["orange"],  "BEI 3%")
-
-    # ⑧ Yield Curve
-    bar(dv("TERM_SPREAD"), 3,2)
-    hline(0, 3,2, C["subtext"], "Inversion")
-
-    # ⑨ Geopolitical
-    line(normalize(m("ILS")),  3,3,"ILS",  C["blue"])
-    line(normalize(m("KSA")),  3,3,"KSA",  C["gold"],"dot")
-    line(normalize(m("BDRY")), 3,3,"BDRY", C["cyan"],"dash")
-
-    # ── 레이아웃 ─────────────────────────────────────
-    fig.update_layout(
-        paper_bgcolor=C["bg"],
-        plot_bgcolor=C["panel"],
-        font=dict(family="Arial, sans-serif", color=C["text"], size=10),
-        height=1200, width=1400,
-        margin=dict(l=55, r=35, t=90, b=40),
-        title=dict(
-            text=(f"Macro Stress Dashboard v2  |  "
-                  f"{datetime.now().strftime('%Y-%m-%d')}  |  "
-                  f"Stagflation & Dollar Cycle Monitor"),
-            font=dict(size=15, color=C["text"], family="Arial, sans-serif"),
-            x=0.5,
-        ),
-        legend=dict(
-            bgcolor=C["panel"], bordercolor=C["border"],
-            borderwidth=1, font=dict(size=9),
-        ),
-    )
-
-    # subplot 제목 폰트 (HTML 태그 포함이라 크기 조정)
-    for ann in fig.layout.annotations:
-        ann.font = dict(size=10, color="#adbac7", family="Arial, sans-serif")
-
-    fig.update_xaxes(gridcolor=C["border"], zeroline=False,
-                     tickfont=dict(size=8, family="Arial, sans-serif"))
-    fig.update_yaxes(gridcolor=C["border"], zeroline=False,
-                     tickfont=dict(size=8, family="Arial, sans-serif"))
-
-    fig.write_image(CHART_FILE, scale=2)
-    print("  [OK] Chart saved")
-    return CHART_FILE
+def save(fig, filename):
+    path = f"{CHART_DIR}/{filename}"
+    fig.write_image(path, scale=2)
+    return path
 
 
 # ─────────────────────────────────────────────────────
-# 5. 텔레그램
+# 5. 차트 9장 개별 생성
+# ─────────────────────────────────────────────────────
+
+def make_all_charts(mkt, derived, fred):
+    os.makedirs(CHART_DIR, exist_ok=True)
+    m  = lambda k: mkt.get(k, pd.Series(dtype=float))
+    dv = lambda k: derived.get(k, pd.Series(dtype=float))
+    f  = lambda k: fred.get(k, pd.Series(dtype=float))
+    paths = []
+
+    # ① DXY & VIX
+    fig = base_fig("① DXY & VIX",
+                   "DXY>104 = dollar stress  |  VIX>25 = fear zone  |  VIX>30 = panic")
+    add_line(fig, m("DXY"), "DXY", C["blue"])
+    add_line(fig, m("VIX"), "VIX", C["red"], "dot")
+    hline(fig, 104, C["orange"], "DXY 104")
+    hline(fig, 25,  C["red"],    "VIX 25")
+    hline(fig, 30,  C["red"],    "VIX 30")
+    paths.append(save(fig, "01_dxy_vix.png"))
+
+    # ② Gold vs Silver
+    fig = base_fig("② Gold vs Silver (normalized to 100)",
+                   "G/S Ratio > 80 = silver undervalued  |  divergence = stress signal")
+    add_line(fig, normalize(m("Gold")),   "Gold (norm)",    C["gold"])
+    add_line(fig, normalize(m("Silver")), "Silver (norm)",  C["silver"], "dot")
+    add_line(fig, dv("GOLD_SILVER"),      "Gold/Silver Ratio", C["orange"], "dash")
+    hline(fig, 80, C["red"], "Ratio 80")
+    paths.append(save(fig, "02_gold_silver.png"))
+
+    # ③ Credit Spreads
+    fig = base_fig("③ Credit Spreads",
+                   "IG > 1.5% = investment grade stress  |  HY > 4.5% = high yield stress")
+    add_line(fig, f("IG_SPREAD"), "IG Spread (%)", C["blue"])
+    add_line(fig, f("HY_SPREAD"), "HY Spread (%)", C["red"], "dot")
+    hline(fig, 1.5, C["orange"], "IG 1.5%")
+    hline(fig, 4.5, C["red"],    "HY 4.5%")
+    paths.append(save(fig, "03_credit_spreads.png"))
+
+    # ④ EM Currencies
+    fig = base_fig("④ EM Currencies vs USD (normalized to 100)",
+                   "Rising = EM currency weakening  |  3+ simultaneous = Fed pivot signal")
+    for key, lbl, clr in [
+        ("KRW","KRW (Korea)",   C["blue"]),
+        ("TRY","TRY (Turkey)",  C["red"]),
+        ("ZAR","ZAR (S.Africa)",C["orange"]),
+        ("BRL","BRL (Brazil)",  C["green"]),
+        ("INR","INR (India)",   C["purple"]),
+    ]:
+        add_line(fig, normalize(m(key)), lbl, clr)
+    paths.append(save(fig, "04_em_currencies.png"))
+
+    # ⑤ Copper Ratios
+    fig = base_fig("⑤ Copper/Gold & Copper/WTI Ratio",
+                   "Cu/Gold falling = recession leading  |  Cu/WTI falling = stagflation signal")
+    add_line(fig, dv("COPPER_GOLD"), "Copper/Gold", C["cyan"])
+    add_line(fig, dv("COPPER_WTI"),  "Copper/WTI",  C["pink"], "dot")
+    paths.append(save(fig, "05_copper_ratios.png"))
+
+    # ⑥ Oil & OVX
+    fig = base_fig("⑥ Oil (WTI / Brent) & OVX",
+                   "WTI > $90 = inflation risk  |  OVX > 40 = oil market panic  |  Brent-WTI > $5 = supply disruption")
+    add_line(fig, m("WTI"),   "WTI ($)",   C["orange"])
+    add_line(fig, m("Brent"), "Brent ($)", C["gold"], "dot")
+    add_line(fig, m("OVX"),   "OVX",       C["red"],  "dash")
+    hline(fig, 90, C["red"],    "WTI $90")
+    hline(fig, 40, C["orange"], "OVX 40")
+    paths.append(save(fig, "06_oil_ovx.png"))
+
+    # ⑦ Inflation & Real Rate
+    fig = base_fig("⑦ Breakeven Inflation & Real Rate",
+                   "BEI > 3% = inflation expectations elevated  |  Real Rate < 0 = gold bullish environment")
+    add_line(fig, f("BEI_5Y"),     "5Y BEI (%)",    C["orange"])
+    add_line(fig, f("BEI_10Y"),    "10Y BEI (%)",   C["gold"], "dot")
+    add_line(fig, dv("REAL_RATE"), "Real Rate (%)", C["red"],  "dash")
+    hline(fig, 0,   C["subtext"], "")
+    hline(fig, 3.0, C["orange"],  "BEI 3%")
+    paths.append(save(fig, "07_inflation_realrate.png"))
+
+    # ⑧ Yield Curve
+    fig = base_fig("⑧ Yield Curve Spread (10Y - 2Y)",
+                   "Below 0 = inverted curve = recession leading indicator (avg 12-18mo lead)")
+    add_bar(fig, dv("TERM_SPREAD"), "10Y-2Y Spread")
+    hline(fig, 0, C["subtext"], "Inversion Line")
+    paths.append(save(fig, "08_yield_curve.png"))
+
+    # ⑨ Geopolitical
+    fig = base_fig("⑨ Geopolitical Monitor (normalized to 100)",
+                   "ILS/KSA falling = Middle East stress  |  BDRY falling = global trade slowdown")
+    add_line(fig, normalize(m("ILS")),  "ILS (Israel Shekel)", C["blue"])
+    add_line(fig, normalize(m("KSA")),  "KSA (Saudi ETF)",     C["gold"], "dot")
+    add_line(fig, normalize(m("BDRY")), "BDRY (Shipping ETF)", C["cyan"], "dash")
+    paths.append(save(fig, "09_geopolitical.png"))
+
+    print(f"  [OK] {len(paths)} charts saved")
+    return paths
+
+
+# ─────────────────────────────────────────────────────
+# 6. 텔레그램
 # ─────────────────────────────────────────────────────
 
 def tg_text(text):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         r = requests.post(url, data={
-            "chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": text,
+            "parse_mode": "HTML",
         }, timeout=15)
-        print(f"  Text sent: {r.status_code}")
+        print(f"  Text: {r.status_code}")
     except Exception as e:
         print(f"  [ERR] text: {e}")
 
-def tg_photo(path):
+
+def tg_photo(path, caption=""):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         with open(path, "rb") as f:
-            r = requests.post(url, data={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "caption": f"Macro Chart | {datetime.now().strftime('%Y-%m-%d')}",
-            }, files={"photo": f}, timeout=30)
-        print(f"  Photo sent: {r.status_code}")
+            r = requests.post(url,
+                data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption},
+                files={"photo": f},
+                timeout=30,
+            )
+        print(f"  Photo [{os.path.basename(path)}]: {r.status_code}")
+        return r.status_code == 200
     except Exception as e:
-        print(f"  [ERR] photo: {e}")
+        print(f"  [ERR] photo {path}: {e}")
+        return False
+
+
+def tg_media_group(paths, captions):
+    """여러 장을 하나의 앨범으로 묶어 전송 (최대 10장)"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMediaGroup"
+        files = {}
+        media = []
+        for i, (path, cap) in enumerate(zip(paths, captions)):
+            key = f"photo{i}"
+            files[key] = open(path, "rb")
+            item = {"type": "photo", "media": f"attach://{key}"}
+            if i == 0:
+                item["caption"] = cap  # 첫 장에만 캡션
+            media.append(item)
+
+        import json
+        r = requests.post(url,
+            data={"chat_id": TELEGRAM_CHAT_ID, "media": json.dumps(media)},
+            files=files,
+            timeout=60,
+        )
+        for f in files.values():
+            f.close()
+        print(f"  MediaGroup: {r.status_code}")
+        return r.status_code == 200
+    except Exception as e:
+        print(f"  [ERR] media_group: {e}")
+        return False
 
 
 # ─────────────────────────────────────────────────────
-# 6. 메시지 포맷
+# 7. 메시지 포맷
 # ─────────────────────────────────────────────────────
 
 def format_message(signals, danger, total):
@@ -463,7 +527,7 @@ def format_message(signals, danger, total):
 
 
 # ─────────────────────────────────────────────────────
-# 7. 메인
+# 8. 메인
 # ─────────────────────────────────────────────────────
 
 def run():
@@ -486,21 +550,34 @@ def run():
         for name, _, val_str, s in items:
             print(f"  {s} {name}: {val_str}")
 
-    print("\n[Chart generating...]")
-    chart_ok = False
+    # 차트 9장 생성
+    print("\n[Charts generating...]")
+    chart_paths = []
     try:
-        make_chart(mkt, derived, fred)
-        chart_ok = True
+        chart_paths = make_all_charts(mkt, derived, fred)
     except Exception as e:
-        print(f"  [WARN] Chart failed: {e}")
+        print(f"  [WARN] Charts failed: {e}")
 
+    # 텔레그램 전송
     print("\n[Telegram sending...]")
     print(f"  TOKEN:   {'SET' if TELEGRAM_TOKEN else 'MISSING'}")
     print(f"  CHAT_ID: {'SET' if TELEGRAM_CHAT_ID else 'MISSING'}")
 
-    if chart_ok:
-        tg_photo(CHART_FILE)
+    # ① 텍스트 리포트 먼저
     tg_text(format_message(signals, danger, total))
+
+    # ② 차트 9장을 앨범(묶음)으로 전송
+    if chart_paths:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        summary  = f"Macro Charts | {date_str} | Alerts {danger}/{total}"
+        success  = tg_media_group(chart_paths, [summary] + [""] * (len(chart_paths)-1))
+
+        # 앨범 전송 실패 시 개별 전송으로 fallback
+        if not success:
+            print("  [FALLBACK] Sending individually...")
+            for path in chart_paths:
+                tg_photo(path, os.path.basename(path))
+
     print(f"\n[DONE] Alerts {danger}/{total}")
 
 
