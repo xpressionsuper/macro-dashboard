@@ -54,6 +54,7 @@ GitHub Actions 설정 예시 (.github/workflows/liquidity.yml):
 
 import os
 import sys
+import time
 import warnings
 warnings.filterwarnings('ignore')
 from datetime import datetime, timedelta
@@ -137,50 +138,86 @@ class DataFetcher:
         self.raw: dict[str, pd.Series] = {}
 
     # ── FRED ─────────────────────────────────────────────────────────
-    def _fred(self, key: str, sid: str, div: float, name: str) -> None:
-        try:
-            s = self.fred.get_series(sid, observation_start=self.start)
-            self.raw[key] = (s / div).rename(name)
-            print(f"  ✅  {name:<34}  FRED: {sid}")
-        except Exception as e:
-            print(f"  ⚠️  {name:<34}  실패 → {e}")
+    def _fred(self, key: str, sid: str, div: float, name: str,
+              retries: int = 3) -> None:
+        """재시도(최대 3회) + 호출 간격 0.4 s 으로 레이트 리밋 회피."""
+        for attempt in range(retries):
+            try:
+                s = self.fred.get_series(sid, observation_start=self.start)
+                if s is None or s.dropna().empty:
+                    raise ValueError("빈 시리즈 반환")
+                self.raw[key] = (s / div).rename(name)
+                print(f"  ✅  {name:<34}  FRED: {sid}")
+                time.sleep(0.4)          # API 레이트 리밋 회피
+                return
+            except Exception as e:
+                wait = 2 ** attempt      # 1 s → 2 s → 4 s
+                if attempt < retries - 1:
+                    print(f"  ↺   {sid}  재시도 {attempt+1}/{retries} "
+                          f"({wait}s 대기)…  ({e})")
+                    time.sleep(wait)
+                else:
+                    print(f"  ❌  {name:<34}  최종 실패 → {e}")
 
     # ── Treasury TGA ──────────────────────────────────────────────────
-    def _tga(self) -> None:
+    def _tga(self, retries: int = 3) -> None:
         """
         Treasury Fiscal Data API에서 TGA (Federal Reserve Account 잔고) 수집.
-        API: https://fiscaldata.treasury.gov/api-documentation/
+        account_type 이름이 바뀌는 경우를 대비해 부분 문자열 매칭 사용.
         """
-        try:
-            resp = requests.get(
-                "https://api.fiscaldata.treasury.gov/services/api/v1"
-                "/accounting/dts/operating_cash_balance",
-                params={
-                    "fields": "record_date,open_today_bal,account_type",
-                    "filter": f"record_date:gte:{self.start}",
-                    "sort": "record_date",
-                    "page[size]": 10_000,
-                },
-                timeout=30,
-            )
-            rows = resp.json().get("data", [])
-            # 'Federal Reserve Account' = 재무부의 연준 계좌 = TGA
-            rows = [r for r in rows if "Federal Reserve" in str(r.get("account_type", ""))]
-            if not rows:
-                raise ValueError("Federal Reserve Account 데이터 없음")
+        url = (
+            "https://api.fiscaldata.treasury.gov/services/api/v1"
+            "/accounting/dts/operating_cash_balance"
+        )
+        params = {
+            "fields":      "record_date,open_today_bal,account_type",
+            "filter":      f"record_date:gte:{self.start}",
+            "sort":        "record_date",
+            "page[size]":  10_000,
+        }
 
-            df = pd.DataFrame(rows)
-            df["record_date"]    = pd.to_datetime(df["record_date"])
-            df["open_today_bal"] = (
-                df["open_today_bal"].astype(str).str.replace(",", "", regex=False)
-            )
-            df["open_today_bal"] = pd.to_numeric(df["open_today_bal"], errors="coerce")
-            df = df.sort_values("record_date").set_index("record_date")
-            self.raw["TGA"] = (df["open_today_bal"] / 1_000).rename("TGA 잔고 ($B)")
-            print(f"  ✅  {'TGA 잔고 ($B)':<34}  Treasury Fiscal Data API")
+        for attempt in range(retries):
+            try:
+                resp = requests.get(url, params=params, timeout=30)
+                resp.raise_for_status()
+                rows = resp.json().get("data", [])
 
-        except Exception as e:
-            print(f"  ⚠️  {'TGA 잔고':<34}  실패 → {e}")
+                # account_type 에 'Federal Reserve' 포함 여부로 필터
+                rows = [r for r in rows
+                        if "Federal Reserve" in str(r.get("account_type", ""))]
+                if not rows:
+                    raise ValueError(
+                        f"Federal Reserve Account 행 없음 "
+                        f"(전체 {len(resp.json().get('data',[]))}행 중)"
+                    )
+
+                df = pd.DataFrame(rows)
+                df["record_date"]    = pd.to_datetime(df["record_date"])
+                df["open_today_bal"] = (
+                    df["open_today_bal"]
+                    .astype(str).str.replace(",", "", regex=False)
+                )
+                df["open_today_bal"] = pd.to_numeric(
+                    df["open_today_bal"], errors="coerce"
+                )
+                df = df.dropna(subset=["open_today_bal"])
+                df = df.sort_values("record_date").set_index("record_date")
+                if df.empty:
+                    raise ValueError("숫자 변환 후 데이터 없음")
+
+                self.raw["TGA"] = (df["open_today_bal"] / 1_000).rename("TGA 잔고 ($B)")
+                print(f"  ✅  {'TGA 잔고 ($B)':<34}  Treasury Fiscal Data API "
+                      f"({len(df)}행)")
+                return
+
+            except Exception as e:
+                wait = 2 ** attempt
+                if attempt < retries - 1:
+                    print(f"  ↺   TGA 재시도 {attempt+1}/{retries} "
+                          f"({wait}s 대기)…  ({e})")
+                    time.sleep(wait)
+                else:
+                    print(f"  ❌  {'TGA 잔고':<34}  최종 실패 → {e}")
 
     # ── 전체 수집 ────────────────────────────────────────────────────
     def fetch(self) -> dict:
@@ -540,11 +577,27 @@ def build_dashboard(
         s = d.get(key, pd.Series(dtype=float)).dropna()
         return s if not s.empty else None
 
+    # 데이터가 추가된 서브플롯 (row, col) 추적 → 빈 칸에 "데이터 없음" 표시
+    _filled: set = set()
+
+    def _no_data(row: int, col: int) -> None:
+        """빈 서브플롯에 안내 텍스트 삽입"""
+        mid = datetime.now() - timedelta(days=LOOKBACK_DAYS // 2)
+        fig.add_trace(go.Scatter(
+            x=[mid], y=[0],
+            mode="text",
+            text=["데이터 없음"],
+            textfont=dict(color="#555555", size=13),
+            showlegend=False,
+            hoverinfo="skip",
+        ), row=row, col=col)
+
     def area(row: int, col: int, s: Optional[pd.Series],
              color: str, name: str) -> None:
         """영역 채우기 라인 차트"""
         if s is None:
             return
+        _filled.add((row, col))
         fig.add_trace(go.Scatter(
             x=s.index, y=s.values, name=name, mode="lines",
             line=dict(color=color, width=1.8),
@@ -555,15 +608,20 @@ def build_dashboard(
 
     def ln(row: int, col: int, s: Optional[pd.Series],
            color: str, name: str, width: float = 1.6,
-           dash: str = "solid", legend: bool = False) -> None:
-        """일반 라인 차트"""
+           dash: str = "solid", legend: bool = False,
+           legend_group: str = "legend") -> None:
+        """일반 라인 차트 (legend_group: 'legend' | 'legend2')"""
         if s is None:
             return
+        _filled.add((row, col))
+        # legend2 → Plotly 두 번째 독립 범례 그룹
+        extra = {"legend": legend_group} if legend else {}
         fig.add_trace(go.Scatter(
             x=s.index, y=s.values, name=name, mode="lines",
             line=dict(color=color, width=width, dash=dash),
             showlegend=legend,
             hovertemplate=f"%{{x|%Y-%m-%d}}<br>{name}: %{{y:,.2f}}<extra></extra>",
+            **extra,
         ), row=row, col=col)
 
     def bar(row: int, col: int, s: Optional[pd.Series],
@@ -571,6 +629,7 @@ def build_dashboard(
         """컬러 맵핑 막대 차트"""
         if s is None:
             return
+        _filled.add((row, col))
         fig.add_trace(go.Bar(
             x=s.index, y=s.values, name=name,
             marker_color=[cfn(v) for v in s.values],
@@ -583,9 +642,10 @@ def build_dashboard(
     # ══════════════════════════════════════════════════════════════════
     area(1, 1, S("NET_LIQ", "D"), C_BLU, "넷 유동성")
 
-    ln(1, 2, S("BS"),  C_GRN, "BS Total", legend=True)
-    ln(1, 2, S("UST"), C_CYN, "국채 (UST)", legend=True)
-    ln(1, 2, S("MBS"), C_BLU, "MBS", legend=True)
+    # ② BS 구성 ─ legend 그룹 'legend' (좌상단)
+    ln(1, 2, S("BS"),  C_GRN, "BS Total",   legend=True,  legend_group="legend")
+    ln(1, 2, S("UST"), C_CYN, "국채 (UST)", legend=True,  legend_group="legend")
+    ln(1, 2, S("MBS"), C_BLU, "MBS",        legend=True,  legend_group="legend")
 
     area(1, 3, S("RRP"), C_RED, "RRP 잔고")
     _hline(fig, 500, S_YLW, "$500B 경계", 1, 3)
@@ -611,10 +671,11 @@ def build_dashboard(
     # ══════════════════════════════════════════════════════════════════
     #  Row 3 ─ HY/IG | VIX | M2 YoY
     # ══════════════════════════════════════════════════════════════════
+    # ⑦ HY/IG ─ legend2 그룹 (BS 범례와 분리)
     ln(3, 1, S("HY_OAS"), C_RED, "HY OAS",
-       width=2.2, legend=True)
+       width=2.2, legend=True, legend_group="legend2")
     ln(3, 1, S("IG_OAS"), C_ORG, "IG OAS",
-       width=2.2, legend=True)
+       width=2.2, legend=True, legend_group="legend2")
     _hline(fig, 3.5, S_GRN, "완화선 3.5%", 3, 1)
     _hline(fig, 5.5, S_RED,  "위기선 5.5%", 3, 1)
 
@@ -697,6 +758,14 @@ def build_dashboard(
         ), row=5, col=1)
 
     # ══════════════════════════════════════════════════════════════════
+    #  빈 서브플롯에 "데이터 없음" 텍스트 삽입
+    # ══════════════════════════════════════════════════════════════════
+    ALL_PLOTS = [(r, c) for r in range(1, 5) for c in range(1, 4)]
+    for _r, _c in ALL_PLOTS:
+        if (_r, _c) not in _filled:
+            _no_data(_r, _c)
+
+    # ══════════════════════════════════════════════════════════════════
     #  글로벌 스타일
     # ══════════════════════════════════════════════════════════════════
     AX_STYLE = dict(
@@ -717,13 +786,21 @@ def build_dashboard(
     for ann in fig.layout.annotations:
         ann.font.update(size=11, color=C_MUT)
 
-    # BS 구성·HY/IG 범례 위치
+    # ── legend  : BS 구성 (상단 중앙) ────────────────────────────────
+    # ── legend2 : HY/IG 크레딧 스프레드 (⑦ 차트 내부 우상단) ──────────
     fig.update_layout(
         legend=dict(
             bgcolor="rgba(22,27,34,0.85)", bordercolor="#30363D",
             font=dict(color=C_MUT, size=10),
             x=0.37, y=0.998, orientation="h",
-        )
+            title=dict(text="② Fed 대차대조표", font=dict(size=9, color=C_MUT)),
+        ),
+        legend2=dict(
+            bgcolor="rgba(22,27,34,0.85)", bordercolor="#30363D",
+            font=dict(color=C_MUT, size=10),
+            x=0.005, y=0.425, orientation="v",
+            title=dict(text="⑦ 크레딧", font=dict(size=9, color=C_MUT)),
+        ),
     )
 
     fig.update_layout(
