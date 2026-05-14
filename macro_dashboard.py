@@ -186,16 +186,65 @@ class DataFetcher:
         for attempt in range(retries):
             try:
                 resp = requests.get(url, params=params, timeout=30)
-                resp.raise_for_status()
-                rows = resp.json().get("data", [])
 
-                # account_type 에 'Federal Reserve' 포함 여부로 필터
-                rows = [r for r in rows
-                        if "Federal Reserve" in str(r.get("account_type", ""))]
+                # ── HTTP 오류 체크 ──────────────────────────────────────
+                if resp.status_code != 200:
+                    raise ValueError(
+                        f"HTTP {resp.status_code} "
+                        f"(x-deny-reason: {resp.headers.get('x-deny-reason','없음')})"
+                    )
+
+                all_rows = resp.json().get("data", [])
+                if not all_rows:
+                    raise ValueError("API 응답에 data 항목 없음")
+
+                # ── account_type 값 진단 출력 ─────────────────────────
+                all_types = sorted(set(r.get("account_type", "") for r in all_rows))
+                print(f"       [TGA 진단] 전체 {len(all_rows)}행, "
+                      f"account_type 목록: {all_types}")
+
+                # ── 여러 패턴으로 Federal Reserve 계좌 탐색 ────────────
+                # Treasury API는 버전에 따라 account_type 문자열이 다를 수 있음
+                SEARCH_PATTERNS = [
+                    "Federal Reserve",        # 표준
+                    "federal reserve",        # 소문자
+                    "Deposits, Federal",      # 상세명
+                    "General Account",        # 약식명
+                    "Treasury, Deposits",     # 역순
+                ]
+                rows = []
+                matched_pattern = None
+                for pat in SEARCH_PATTERNS:
+                    rows = [r for r in all_rows
+                            if pat.lower() in str(r.get("account_type", "")).lower()]
+                    if rows:
+                        matched_pattern = pat
+                        break
+
+                if not rows:
+                    # 마지막 수단: 잔고가 가장 큰 단일 account_type 사용
+                    # (TGA는 항상 가장 큰 잔고를 가짐)
+                    from collections import defaultdict
+                    type_sums: dict = defaultdict(float)
+                    for r in all_rows:
+                        try:
+                            bal = float(
+                                str(r.get("open_today_bal", "0")).replace(",", "")
+                            )
+                            type_sums[r.get("account_type", "")] += bal
+                        except Exception:
+                            pass
+                    if type_sums:
+                        best_type = max(type_sums, key=type_sums.__getitem__)
+                        rows = [r for r in all_rows
+                                if r.get("account_type", "") == best_type]
+                        matched_pattern = f"최대잔고 자동선택: '{best_type}'"
+                        print(f"       [TGA 진단] 패턴 미매칭 → {matched_pattern}")
+
                 if not rows:
                     raise ValueError(
-                        f"Federal Reserve Account 행 없음 "
-                        f"(전체 {len(resp.json().get('data',[]))}행 중)"
+                        f"어떤 패턴으로도 매칭 실패. "
+                        f"account_type 목록을 확인하고 코드를 수정하세요: {all_types}"
                     )
 
                 df = pd.DataFrame(rows)
@@ -210,21 +259,41 @@ class DataFetcher:
                 df = df.dropna(subset=["open_today_bal"])
                 df = df.sort_values("record_date").set_index("record_date")
                 if df.empty:
-                    raise ValueError("숫자 변환 후 데이터 없음")
+                    raise ValueError("숫자 변환 후 유효 행 없음")
 
                 self.raw["TGA"] = (df["open_today_bal"] / 1_000).rename("TGA 잔고 ($B)")
-                print(f"  ✅  {'TGA 잔고 ($B)':<34}  Treasury Fiscal Data API "
-                      f"({len(df)}행)")
+                print(f"  ✅  {'TGA 잔고 ($B)':<34}  Treasury API "
+                      f"[{matched_pattern}] ({len(df)}행)")
                 return
 
             except Exception as e:
                 wait = 2 ** attempt
                 if attempt < retries - 1:
-                    print(f"  ↺   TGA 재시도 {attempt+1}/{retries} "
+                    print(f"  ↺   TGA Treasury API 재시도 {attempt+1}/{retries} "
                           f"({wait}s 대기)…  ({e})")
                     time.sleep(wait)
                 else:
-                    print(f"  ❌  {'TGA 잔고':<34}  최종 실패 → {e}")
+                    print(f"  ⚠️  Treasury API 최종 실패: {e}")
+                    print(f"       → FRED 대체 소스(WTREGEN) 시도 중…")
+                    self._tga_fred_fallback()
+
+    def _tga_fred_fallback(self) -> None:
+        """
+        Treasury API 실패 시 FRED의 WTREGEN 시리즈로 폴백.
+        WTREGEN = 'U.S. Treasury, Deposits, Federal Reserve Banks'
+                  (H.4.1, 주간, 단위: 백만 달러 → /1000 = 십억 달러)
+        이 시리즈는 Fed 대차대조표 부채 항목으로,
+        Treasury Fiscal Data API TGA와 동일한 수치를 제공.
+        """
+        try:
+            s = self.fred.get_series("WTREGEN", observation_start=self.start)
+            if s is None or s.dropna().empty:
+                raise ValueError("WTREGEN 시리즈 비어있음")
+            self.raw["TGA"] = (s / 1_000).rename("TGA 잔고 ($B)")
+            print(f"  ✅  {'TGA 잔고 ($B)':<34}  FRED: WTREGEN (주간, H.4.1 폴백)")
+        except Exception as e:
+            print(f"  ❌  {'TGA 잔고':<34}  FRED 폴백도 실패 → {e}")
+            print(f"       TGA·넷 유동성 차트는 표시되지 않습니다.")
 
     # ── 전체 수집 ────────────────────────────────────────────────────
     def fetch(self) -> dict:
@@ -739,13 +808,23 @@ def build_dashboard(
 
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
-    # ── 서브플롯 레이아웃 (6행 × 3열 + 하단 테이블) ────────────────────
-    #  Row 1: ① 넷 유동성      | ② Fed BS 구성      | ③ RRP 잔고
-    #  Row 2: ④ TGA            | ⑤ 은행 지준금       | ⑥ SOFR-IORB
-    #  Row 3: ⑦ HY/IG 스프레드 | ⑧ VIX              | ⑨ M2 전년비
-    #  Row 4: ⑩ 달러 지수      | ⑪ 수익률 곡선       | ⑫ 2Y/10Y 금리
-    #  Row 5: ⑬ 은행 대출 증가율| ⑭ Fed 스왑라인     | ⑮ 지표별 점수
-    #  Row 6: ⑯ 종합 진단 테이블 (colspan=3)
+    # ── 서브플롯 레이아웃 (16행 × 1열) ────────────────────────────────
+    #  Row  1 : ① 넷 유동성 (BS − RRP − TGA)
+    #  Row  2 : ② Fed 대차대조표 구성
+    #  Row  3 : ③ RRP 잔고
+    #  Row  4 : ④ TGA 잔고
+    #  Row  5 : ⑤ 은행 지준금
+    #  Row  6 : ⑥ SOFR − IORB 스프레드
+    #  Row  7 : ⑦ HY / IG 크레딧 스프레드
+    #  Row  8 : ⑧ VIX
+    #  Row  9 : ⑨ M2 전년비 증가율
+    #  Row 10 : ⑩ 달러 지수 (Broad DXY)
+    #  Row 11 : ⑪ 수익률 곡선 10Y − 2Y
+    #  Row 12 : ⑫ 2년물 / 10년물 국채금리
+    #  Row 13 : ⑬ 상업은행 대출 전년비
+    #  Row 14 : ⑭ Fed 통화스왑라인
+    #  Row 15 : ⑮ 지표별 유동성 점수 (0~10)
+    #  Row 16 : ⑯ 종합 진단 테이블
     TITLES = [
         "① 넷 유동성 (BS − RRP − TGA,  $B)",
         "② Fed 대차대조표 구성  ($B)",
@@ -765,66 +844,60 @@ def build_dashboard(
         "⑯ 종합 유동성 진단",
     ]
 
+    CHART_ROWS = 15   # 차트 행 수 (마지막 행은 테이블)
+    N_ROWS     = 16   # 전체 행 수
+
     fig = make_subplots(
-        rows=6, cols=3,
+        rows=N_ROWS, cols=1,
         subplot_titles=TITLES,
-        specs=[
-            [{}, {}, {}],
-            [{}, {}, {}],
-            [{}, {}, {}],
-            [{}, {}, {}],
-            [{}, {}, {}],
-            [{"colspan": 3, "type": "table"}, None, None],
-        ],
-        vertical_spacing=0.055,
-        horizontal_spacing=0.055,
+        specs=(
+            [[{}]] * CHART_ROWS
+            + [[{"type": "table"}]]
+        ),
+        vertical_spacing=0.022,
+        row_heights=(
+            [280] * (CHART_ROWS - 1)   # 일반 차트: 각 280px
+            + [500]                     # 점수 바: 500px (14개 지표)
+            + [None]                    # 테이블: 자동
+        ),
     )
 
-    # ── 차트 헬퍼 ──────────────────────────────────────────────────────
+    # ── 차트 헬퍼 (col 항상 1) ─────────────────────────────────────────
     def S(key: str, src: str = "R") -> Optional[pd.Series]:
-        """None-safe 시리즈 조회"""
         d = raw if src == "R" else der
         s = d.get(key, pd.Series(dtype=float)).dropna()
         return s if not s.empty else None
 
-    # 데이터가 추가된 서브플롯 (row, col) 추적 → 빈 칸에 "데이터 없음" 표시
     _filled: set = set()
 
-    def _no_data(row: int, col: int) -> None:
-        """빈 서브플롯에 안내 텍스트 삽입"""
+    def _no_data(row: int) -> None:
         mid = datetime.now() - timedelta(days=LOOKBACK_DAYS // 2)
         fig.add_trace(go.Scatter(
-            x=[mid], y=[0],
-            mode="text",
+            x=[mid], y=[0], mode="text",
             text=["데이터 없음"],
-            textfont=dict(color="#555555", size=13),
-            showlegend=False,
-            hoverinfo="skip",
-        ), row=row, col=col)
+            textfont=dict(color="#555555", size=14),
+            showlegend=False, hoverinfo="skip",
+        ), row=row, col=1)
 
-    def area(row: int, col: int, s: Optional[pd.Series],
-             color: str, name: str) -> None:
-        """영역 채우기 라인 차트"""
+    def area(row: int, s: Optional[pd.Series], color: str, name: str) -> None:
         if s is None:
             return
-        _filled.add((row, col))
+        _filled.add(row)
         fig.add_trace(go.Scatter(
             x=s.index, y=s.values, name=name, mode="lines",
-            line=dict(color=color, width=1.8),
+            line=dict(color=color, width=2.0),
             fill="tozeroy", fillcolor=_rgba(color),
             showlegend=False,
             hovertemplate=f"%{{x|%Y-%m-%d}}<br>{name}: %{{y:,.1f}}<extra></extra>",
-        ), row=row, col=col)
+        ), row=row, col=1)
 
-    def ln(row: int, col: int, s: Optional[pd.Series],
-           color: str, name: str, width: float = 1.6,
+    def ln(row: int, s: Optional[pd.Series],
+           color: str, name: str, width: float = 1.8,
            dash: str = "solid", legend: bool = False,
            legend_group: str = "legend") -> None:
-        """일반 라인 차트 (legend_group: 'legend' | 'legend2')"""
         if s is None:
             return
-        _filled.add((row, col))
-        # legend2 → Plotly 두 번째 독립 범례 그룹
+        _filled.add(row)
         extra = {"legend": legend_group} if legend else {}
         fig.add_trace(go.Scatter(
             x=s.index, y=s.values, name=name, mode="lines",
@@ -832,136 +905,142 @@ def build_dashboard(
             showlegend=legend,
             hovertemplate=f"%{{x|%Y-%m-%d}}<br>{name}: %{{y:,.2f}}<extra></extra>",
             **extra,
-        ), row=row, col=col)
+        ), row=row, col=1)
 
-    def bar(row: int, col: int, s: Optional[pd.Series],
-            cfn, name: str) -> None:
-        """컬러 맵핑 막대 차트"""
+    def bar(row: int, s: Optional[pd.Series], cfn, name: str) -> None:
         if s is None:
             return
-        _filled.add((row, col))
+        _filled.add(row)
         fig.add_trace(go.Bar(
             x=s.index, y=s.values, name=name,
             marker_color=[cfn(v) for v in s.values],
             showlegend=False,
             hovertemplate=f"%{{x|%Y-%m-%d}}<br>{name}: %{{y:,.2f}}<extra></extra>",
-        ), row=row, col=col)
+        ), row=row, col=1)
+
+    def hl(row: int, y: float, color: str, label: str,
+           dash: str = "dot") -> None:
+        """수평 참조선 (1열 전용)"""
+        fig.add_hline(
+            y=y,
+            line=dict(color=color, width=1.0, dash=dash),
+            annotation_text=label,
+            annotation_font_size=9,
+            annotation_font_color=color,
+            row=row, col=1,
+        )
 
     # ══════════════════════════════════════════════════════════════════
-    #  Row 1 ─ 넷 유동성 | BS 구성 | RRP
+    #  차트 추가 (Row 1 ~ 15)
     # ══════════════════════════════════════════════════════════════════
-    area(1, 1, S("NET_LIQ", "D"), C_BLU, "넷 유동성")
 
-    # ② BS 구성 ─ legend 그룹 'legend' (좌상단)
-    ln(1, 2, S("BS"),  C_GRN, "BS Total",   legend=True,  legend_group="legend")
-    ln(1, 2, S("UST"), C_CYN, "국채 (UST)", legend=True,  legend_group="legend")
-    ln(1, 2, S("MBS"), C_BLU, "MBS",        legend=True,  legend_group="legend")
+    # ① 넷 유동성
+    area(1, S("NET_LIQ", "D"), C_BLU, "넷 유동성")
 
-    area(1, 3, S("RRP"), C_RED, "RRP 잔고")
-    _hline(fig, 500, S_YLW, "$500B 경계", 1, 3)
-    _hline(fig, 100, S_RED,  "$100B 위험", 1, 3)
+    # ② Fed 대차대조표 구성 (BS / 국채 / MBS)
+    ln(2, S("BS"),  C_GRN, "BS Total",   legend=True, legend_group="legend")
+    ln(2, S("UST"), C_CYN, "국채 (UST)", legend=True, legend_group="legend")
+    ln(2, S("MBS"), C_BLU, "MBS",        legend=True, legend_group="legend")
 
-    # ══════════════════════════════════════════════════════════════════
-    #  Row 2 ─ TGA | 지준금 | SOFR-IORB
-    # ══════════════════════════════════════════════════════════════════
-    area(2, 1, S("TGA"), C_ORG, "TGA 잔고")
-    _hline(fig, 700, S_RED,  "$700B 경계",  2, 1)
-    _hline(fig, 400, S_YLW, "$400B 기준",  2, 1)
+    # ③ RRP 잔고
+    area(3, S("RRP"), C_RED, "RRP 잔고")
+    hl(3, 500, S_YLW, "$500B 경계")
+    hl(3, 100, S_RED,  "$100B 위험")
 
-    area(2, 2, S("RESERVES"), C_PRP, "은행 지준금")
-    _hline(fig, 3_000, S_GRN, "$3T 안정",   2, 2)
-    _hline(fig, 2_500, S_YLW, "$2.5T 경계", 2, 2)
+    # ④ TGA 잔고
+    area(4, S("TGA"), C_ORG, "TGA 잔고")
+    hl(4, 700, S_RED,  "$700B 경계")
+    hl(4, 400, S_YLW, "$400B 기준")
 
-    bar(2, 3, S("SOFR_SPR", "D"),
+    # ⑤ 은행 지준금
+    area(5, S("RESERVES"), C_PRP, "은행 지준금")
+    hl(5, 3_000, S_GRN, "$3T 안정")
+    hl(5, 2_500, S_YLW, "$2.5T 경계")
+
+    # ⑥ SOFR − IORB 스프레드
+    bar(6, S("SOFR_SPR", "D"),
         lambda v: S_GRN if v <= 5 else (S_YLW if v <= 15 else S_RED),
         "SOFR−IORB")
-    _hline(fig,  5, S_YLW, "5bps 경계",  2, 3)
-    _hline(fig, 15, S_RED,  "15bps 경고", 2, 3)
+    hl(6,  5, S_YLW, "5bps 경계")
+    hl(6, 15, S_RED,  "15bps 경고")
 
-    # ══════════════════════════════════════════════════════════════════
-    #  Row 3 ─ HY/IG | VIX | M2 YoY
-    # ══════════════════════════════════════════════════════════════════
-    # ⑦ HY/IG ─ legend2 그룹 (BS 범례와 분리)
-    ln(3, 1, S("HY_OAS"), C_RED, "HY OAS",
+    # ⑦ HY / IG 크레딧 스프레드
+    ln(7, S("HY_OAS"), C_RED, "HY OAS",
        width=2.2, legend=True, legend_group="legend2")
-    ln(3, 1, S("IG_OAS"), C_ORG, "IG OAS",
+    ln(7, S("IG_OAS"), C_ORG, "IG OAS",
        width=2.2, legend=True, legend_group="legend2")
-    _hline(fig, 3.5, S_GRN, "완화선 3.5%", 3, 1)
-    _hline(fig, 5.5, S_RED,  "위기선 5.5%", 3, 1)
+    hl(7, 3.5, S_GRN, "완화선 3.5%")
+    hl(7, 5.5, S_RED,  "위기선 5.5%")
 
-    bar(3, 2, S("VIX"),
+    # ⑧ VIX
+    bar(8, S("VIX"),
         lambda v: S_GRN if v < 18 else (S_YLW if v < 30 else S_RED),
         "VIX")
-    _hline(fig, 18, S_YLW, "18 경계", 3, 2)
-    _hline(fig, 30, S_RED,  "30 위기", 3, 2)
+    hl(8, 18, S_YLW, "18 경계")
+    hl(8, 30, S_RED,  "30 위기")
 
-    bar(3, 3, S("M2_YOY", "D"),
+    # ⑨ M2 전년비
+    bar(9, S("M2_YOY", "D"),
         lambda v: S_GRN if v > 5 else (S_YLW if v > 0 else S_RED),
         "M2 YoY")
-    _hline(fig, 0,  C_MUT, "0% 기준선", 3, 3, dash="solid")
-    _hline(fig, 5,  S_GRN, "+5% 완화선", 3, 3)
+    hl(9, 0, C_MUT, "0% 기준선", dash="solid")
+    hl(9, 5, S_GRN, "+5% 완화선")
 
-    # ══════════════════════════════════════════════════════════════════
-    #  Row 4 ─ 달러 지수 | 수익률 곡선 | 2Y / 10Y / FFR 금리
-    # ══════════════════════════════════════════════════════════════════
-    area(4, 1, S("DXY"), C_ORG, "달러 지수")
+    # ⑩ 달러 지수
+    area(10, S("DXY"), C_ORG, "달러 지수")
 
-    # ⑪ 수익률 곡선 (10Y-2Y) 막대 ─ 역전 구간 빨간색으로 자동 표시
-    bar(4, 2, S("T10Y2Y"),
+    # ⑪ 수익률 곡선 (10Y-2Y) 막대
+    bar(11, S("T10Y2Y"),
         lambda v: S_GRN if v > 0 else (S_YLW if v > -0.5 else S_RED),
         "10Y−2Y")
-    _hline(fig,    0, C_MUT,  "0% 기준",    4, 2, dash="solid")
-    _hline(fig, -0.5, S_RED,  "-0.5% 경보", 4, 2)
+    hl(11,    0, C_MUT, "0% 기준",    dash="solid")
+    hl(11, -0.5, S_RED,  "-0.5% 경보")
 
     # ⑫ 2년물 / 10년물 / 기준금리 비교
-    ln(4, 3, S("DGS2"),  C_RED, "2년물",   legend=True, legend_group="legend3")
-    ln(4, 3, S("DGS10"), C_BLU, "10년물",  legend=True, legend_group="legend3")
-    ln(4, 3, S("FFR"),   C_MUT, "기준금리", legend=True, legend_group="legend3",
+    ln(12, S("DGS2"),  C_RED, "2년물",    legend=True, legend_group="legend3")
+    ln(12, S("DGS10"), C_BLU, "10년물",   legend=True, legend_group="legend3")
+    ln(12, S("FFR"),   C_MUT, "기준금리", legend=True, legend_group="legend3",
        dash="dot", width=1.2)
 
-    # ══════════════════════════════════════════════════════════════════
-    #  Row 5 ─ 상업은행 대출 전년비 | Fed 스왑라인 | 지표별 점수
-    # ══════════════════════════════════════════════════════════════════
     # ⑬ 상업은행 대출 전년비
-    bar(5, 1, S("BANK_YOY", "D"),
+    bar(13, S("BANK_YOY", "D"),
         lambda v: S_GRN if v >= 6 else (S_YLW if v >= 0 else S_RED),
         "은행 대출 전년비")
-    _hline(fig, 6, S_GRN, "+6% 완화", 5, 1)
-    _hline(fig, 0, C_MUT, "0% 기준",  5, 1, dash="solid")
+    hl(13, 6, S_GRN, "+6% 완화")
+    hl(13, 0, C_MUT, "0% 기준", dash="solid")
 
     # ⑭ Fed 통화스왑라인
-    area(5, 2, S("SWPT"), C_PRP, "통화스왑라인")
-    _hline(fig, 100, S_YLW, "$100B 경계", 5, 2)
-    _hline(fig, 300, S_RED,  "$300B 위기", 5, 2)
+    area(14, S("SWPT"), C_PRP, "통화스왑라인")
+    hl(14, 100, S_YLW, "$100B 경계")
+    hl(14, 300, S_RED,  "$300B 위기")
 
-    # ⑮ 지표별 점수 (수평 바) ─ 지표 수가 늘었으므로 마진 조정
+    # ⑮ 지표별 점수 (수평 바)
     if results:
         r_names  = [r.name for r in results]
         r_scores = [r.score for r in results]
         r_colors = [{"GREEN": S_GRN, "YELLOW": S_YLW, "RED": S_RED}[r.status]
                     for r in results]
-        _filled.add((5, 3))
+        _filled.add(15)
         fig.add_trace(go.Bar(
             x=r_scores, y=r_names, orientation="h",
             marker_color=r_colors,
             text=[f"{s}/10" for s in r_scores],
             textposition="outside",
+            textfont=dict(color=C_WHT, size=11),
             showlegend=False,
             hovertemplate="%{y}<br>점수: %{x}/10<extra></extra>",
-        ), row=5, col=3)
-        fig.update_xaxes(range=[0, 13.5], row=5, col=3)
+        ), row=15, col=1)
+        fig.update_xaxes(range=[0, 13.5], row=15, col=1)
         fig.add_vline(
             x=avg_score,
-            line=dict(color=C_WHT, width=1.2, dash="dash"),
-            annotation_text=f"평균 {avg_score}",
-            annotation_font_size=9,
+            line=dict(color=C_WHT, width=1.5, dash="dash"),
+            annotation_text=f"평균 {avg_score}/10",
+            annotation_font_size=11,
             annotation_font_color=C_WHT,
-            row=5, col=3,
+            row=15, col=1,
         )
 
-    # ══════════════════════════════════════════════════════════════════
-    #  Row 6 ─ 종합 진단 테이블
-    # ══════════════════════════════════════════════════════════════════
+    # ⑯ 종합 진단 테이블
     if results:
         ST_LABEL = {"GREEN": "🟢 완화", "YELLOW": "🟡 중립", "RED": "🔴 긴축"}
         ST_BG    = {
@@ -970,7 +1049,7 @@ def build_dashboard(
             "RED":    "rgba(218,54,51,0.14)",
         }
         fig.add_trace(go.Table(
-            columnwidth=[175, 100, 88, 210, 370],
+            columnwidth=[190, 105, 90, 230, 0],  # 마지막 열 숨김
             header=dict(
                 values=["<b>지표명</b>", "<b>현재값</b>", "<b>상태</b>",
                         "<b>진단 요약</b>", "<b>상세 설명</b>"],
@@ -978,7 +1057,7 @@ def build_dashboard(
                 font=dict(color="#C9D1D9", size=12),
                 line_color="#30363D",
                 align=["left", "center", "center", "left", "left"],
-                height=34,
+                height=36,
             ),
             cells=dict(
                 values=[
@@ -992,17 +1071,16 @@ def build_dashboard(
                 font=dict(color="#C9D1D9", size=11),
                 line_color="#30363D",
                 align=["left", "center", "center", "left", "left"],
-                height=52,
+                height=54,
             ),
-        ), row=6, col=1)
+        ), row=16, col=1)
 
     # ══════════════════════════════════════════════════════════════════
-    #  빈 서브플롯에 "데이터 없음" 텍스트 삽입
+    #  빈 차트에 "데이터 없음" 표시
     # ══════════════════════════════════════════════════════════════════
-    ALL_PLOTS = [(r, c) for r in range(1, 6) for c in range(1, 4)]
-    for _r, _c in ALL_PLOTS:
-        if (_r, _c) not in _filled:
-            _no_data(_r, _c)
+    for _r in range(1, CHART_ROWS + 1):
+        if _r not in _filled:
+            _no_data(_r)
 
     # ══════════════════════════════════════════════════════════════════
     #  글로벌 스타일
@@ -1013,38 +1091,42 @@ def build_dashboard(
         tickfont=dict(color=C_MUT, size=9),
         zerolinecolor="#30363D",
     )
-    for r in range(1, 5):
-        for c in range(1, 4):
-            try:
-                fig.update_xaxes(**AX_STYLE, row=r, col=c)
-                fig.update_yaxes(**AX_STYLE, row=r, col=c)
-            except Exception:
-                pass
+    for _r in range(1, CHART_ROWS + 1):
+        try:
+            fig.update_xaxes(**AX_STYLE, row=_r, col=1)
+            fig.update_yaxes(**AX_STYLE, row=_r, col=1)
+        except Exception:
+            pass
 
     # 서브플롯 제목 폰트
     for ann in fig.layout.annotations:
-        ann.font.update(size=11, color=C_MUT)
+        ann.font.update(size=12, color=C_MUT)
 
-    # ── legend  : BS 구성 (상단 중앙) ────────────────────────────────
-    # ── legend2 : HY/IG 크레딧 스프레드 (⑦ 차트 내부 우상단) ──────────
+    # ── 범례 ─────────────────────────────────────────────────────────
+    # legend  : ② Fed BS 구성  (차트 상단 우측)
+    # legend2 : ⑦ HY/IG       (차트 상단 좌측)
+    # legend3 : ⑫ 2Y/10Y/FFR  (차트 상단 우측)
     fig.update_layout(
         legend=dict(
-            bgcolor="rgba(22,27,34,0.85)", bordercolor="#30363D",
-            font=dict(color=C_MUT, size=10),
-            x=0.37, y=0.999, orientation="h",
+            bgcolor="rgba(22,27,34,0.88)", bordercolor="#30363D",
+            font=dict(color=C_MUT, size=11),
+            x=0.75, y=1 - (1 / N_ROWS) * 1.05,
+            xanchor="left", orientation="v",
             title=dict(text="② Fed 대차대조표", font=dict(size=9, color=C_MUT)),
         ),
         legend2=dict(
-            bgcolor="rgba(22,27,34,0.85)", bordercolor="#30363D",
-            font=dict(color=C_MUT, size=10),
-            x=0.005, y=0.565, orientation="v",
-            title=dict(text="⑦ 크레딧", font=dict(size=9, color=C_MUT)),
+            bgcolor="rgba(22,27,34,0.88)", bordercolor="#30363D",
+            font=dict(color=C_MUT, size=11),
+            x=0.01, y=1 - (6 / N_ROWS) * 1.05,
+            xanchor="left", orientation="v",
+            title=dict(text="⑦ 크레딧 스프레드", font=dict(size=9, color=C_MUT)),
         ),
         legend3=dict(
-            bgcolor="rgba(22,27,34,0.85)", bordercolor="#30363D",
-            font=dict(color=C_MUT, size=10),
-            x=0.680, y=0.345, orientation="v",
-            title=dict(text="⑫ 금리", font=dict(size=9, color=C_MUT)),
+            bgcolor="rgba(22,27,34,0.88)", bordercolor="#30363D",
+            font=dict(color=C_MUT, size=11),
+            x=0.75, y=1 - (11 / N_ROWS) * 1.05,
+            xanchor="left", orientation="v",
+            title=dict(text="⑫ 국채금리", font=dict(size=9, color=C_MUT)),
         ),
     )
 
@@ -1065,7 +1147,7 @@ def build_dashboard(
             family="Malgun Gothic, Apple SD Gothic Neo, NanumGothic, Arial",
             color="#C9D1D9",
         ),
-        height=2600,
+        height=5500,      # 1열 × 16행: 차트 14개×280px + 점수500px + 테이블 + 여백
         margin=dict(l=65, r=50, t=190, b=40),
         barmode="group",
     )
