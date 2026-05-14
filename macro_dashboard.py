@@ -117,12 +117,19 @@ FRED_MAP: dict[str, tuple] = {
     "SOFR":     ("SOFR",             1, "SOFR (%)"),
     "IORB":     ("IORB",             1, "IORB (%)"),
     "FFR":      ("DFF",              1, "기준금리 (%)"),
+    # ── 수익률 곡선 (합성 유동성 핵심 지표) ──────────────────────────────
+    "DGS2":     ("DGS2",             1, "2년물 국채금리 (%)"),
+    "DGS10":    ("DGS10",            1, "10년물 국채금리 (%)"),
+    "T10Y2Y":   ("T10Y2Y",           1, "수익률 곡선 10Y-2Y (%)"),
     # ③ 시장 스트레스
     "HY_OAS":   ("BAMLH0A0HYM2",     1, "HY 스프레드 (%)"),
     "IG_OAS":   ("BAMLC0A0CM",       1, "IG 스프레드 (%)"),
     "VIX":      ("VIXCLS",           1, "VIX"),
-    # ④ 달러
+    # ④ 달러 / 글로벌
     "DXY":      ("DTWEXBGS",         1, "달러 지수 (Broad)"),
+    "SWPT":     ("SWPT",             1, "Fed 통화스왑라인 ($B)"),
+    # ⑤ 신용 공급 (은행 대출 충동)
+    "TOTCI":    ("TOTCI",            1, "상업은행 대출 ($B)"),
 }
 
 
@@ -236,10 +243,11 @@ class DataFetcher:
 # ══════════════════════════════════════════════════════════════════════
 def compute_derived(raw: dict) -> dict:
     """
-    3개 파생 지표를 계산합니다.
-      ① 넷 유동성   = BS − RRP − TGA     (월가 표준 유동성 척도)
+    파생 지표를 계산합니다.
+      ① 넷 유동성   = BS − RRP − TGA           (월가 표준 유동성 척도)
       ② SOFR-IORB  = (SOFR − IORB) × 100 bps  (레포 시장 스트레스)
       ③ M2 전년비   = M2 YoY 증가율 (%)
+      ④ 은행대출 전년비 = TOTCI YoY 증가율 (%)   (신용 공급 충동)
     """
     der: dict[str, pd.Series] = {}
 
@@ -262,10 +270,18 @@ def compute_derived(raw: dict) -> dict:
     # ③ M2 전년비 (%)
     if "M2" in raw:
         try:
-            m2m = raw["M2"].resample("ME").last()   # pandas >= 2.2
+            m2m = raw["M2"].resample("ME").last()
         except Exception:
             m2m = raw["M2"].resample("M").last()
         der["M2_YOY"] = m2m.pct_change(12).mul(100).dropna().rename("M2 전년비 (%)")
+
+    # ④ 상업은행 대출 전년비 (%)
+    if "TOTCI" in raw:
+        try:
+            ci = raw["TOTCI"].resample("ME").last()
+        except Exception:
+            ci = raw["TOTCI"].resample("M").last()
+        der["BANK_YOY"] = ci.pct_change(12).mul(100).dropna().rename("은행 대출 전년비 (%)")
 
     return der
 
@@ -455,11 +471,200 @@ class DiagEngine:
         self._push("달러 지수 (Broad DXY)", f"{v:.1f}",
                    st, sc, f"{v:.1f} | 4주 {c:+.1f}%", note)
 
+    # ══ 추가 진단 메서드 (6개) ══════════════════════════════════════════
+
+    def dx_yield_curve(self) -> None:
+        """
+        수익률 곡선 (10Y − 2Y 스프레드)
+        ─────────────────────────────────────────────────────────────
+        > 0%    : 정상 (장기금리 > 단기금리) → 경기 확장 기대
+        -0.5~0% : 평탄화 진행 → 경기 둔화 예고
+        < -0.5% : 역전 → 역사적으로 12~18개월 후 침체
+        막 정상화 중 : 역전 해소 시점 = 실제 침체 임박 신호
+        ─────────────────────────────────────────────────────────────
+        """
+        v = self._last("T10Y2Y")
+        if v is None:
+            return
+        # 4주 전 값으로 역전 해소 방향 감지
+        c = self._chg("T10Y2Y") or 0.0
+        if v > 0:
+            st, sc = "GREEN",  8
+            note   = f"정상 곡선({v:+.2f}%). 경기 확장 기대. 은행 NIM 개선 → 신용 공급 우호."
+        elif v > -0.5:
+            st, sc = "YELLOW", 5
+            note   = (f"평탄화 구간({v:+.2f}%). 경기 둔화 우려. "
+                      f"4주 변화 {c:+.2f}%p → "
+                      f"{'역전 해소 중(침체 임박 신호 주의)' if c > 0.3 else '역전 심화 주의'}.")
+        else:
+            if c > 0.3:  # 역전 해소 방향 = 침체 임박 고경보
+                st, sc = "RED", 1
+                note   = (f"⚠️ 역전 해소 진행 중({v:+.2f}%, 4주 {c:+.2f}%p). "
+                          "역사적으로 역전 해소 후 1~6개월 내 침체 시작. 최고 경보.")
+            else:
+                st, sc = "RED", 2
+                note   = (f"⚠️ 수익률 곡선 역전({v:+.2f}%). "
+                          "과거 8번 중 7번 침체 선행. 유동성 긴축 환경 지속.")
+        self._push("수익률 곡선 (10Y − 2Y)", f"{v:+.2f}%",
+                   st, sc, f"{v:+.2f}% | 4주 {c:+.2f}%p 변화", note)
+
+    def dx_2y_yield(self) -> None:
+        """
+        2년물 국채금리 (Fed 피벗 선행지표)
+        ─────────────────────────────────────────────────────────────
+        2년물은 시장의 향후 2년간 기준금리 기대를 반영.
+        FFR 대비 2년물이 크게 낮아지면 시장이 인하를 선반영 중.
+        ─────────────────────────────────────────────────────────────
+        """
+        v2 = self._last("DGS2")
+        vf = self._last("FFR")
+        if v2 is None or vf is None:
+            return
+        spread = v2 - vf   # 2Y − FFR 스프레드 (음수 = 시장이 인하 선반영)
+        c      = self._chg("DGS2") or 0.0
+        if spread < -0.5:
+            st, sc = "GREEN",  8
+            note   = (f"2년물({v2:.2f}%) ≪ 기준금리({vf:.2f}%), 차이 {spread:+.2f}%p. "
+                      "시장이 상당폭 금리 인하를 선반영 중. 향후 유동성 완화 기대.")
+        elif spread < 0:
+            st, sc = "YELLOW", 6
+            note   = (f"2년물({v2:.2f}%) < 기준금리({vf:.2f}%), 차이 {spread:+.2f}%p. "
+                      "소폭 인하 선반영. CME FedWatch 함께 점검.")
+        else:
+            st, sc = "RED",    3
+            note   = (f"2년물({v2:.2f}%) ≥ 기준금리({vf:.2f}%). "
+                      "시장이 추가 인상 또는 동결 장기화를 예상 중. 유동성 긴축 지속 신호.")
+        self._push("2년물 국채금리 (Fed 피벗 신호)", f"{v2:.2f}%",
+                   st, sc, f"{v2:.2f}% | 2Y-FFR {spread:+.2f}%p", note)
+
+    def dx_m2(self) -> None:
+        """
+        M2 전년비 증가율
+        ─────────────────────────────────────────────────────────────
+        M2 > +6% : 역사적 통화 완화 (1970~2000 평균 ~7%)
+        M2 0~6%  : 중립 (2010년대 평균 ~5%)
+        M2 < 0%  : 통화 수축 → 디플레이션 위험 (2022~2023 경험)
+        ─────────────────────────────────────────────────────────────
+        """
+        v = self._last("M2_YOY", "D")
+        if v is None:
+            return
+        if v >= 6:
+            st, sc = "GREEN",  8
+            note   = (f"M2 전년비 +{v:.1f}%. 역사적 통화 완화 구간. "
+                      "자산 가격 지지. 단, 6% 초과 시 인플레이션 재점화 위험 병행 주시.")
+        elif v >= 0:
+            st, sc = "YELLOW", 6
+            note   = f"M2 전년비 +{v:.1f}%. 완만한 통화 증가. 중립 환경."
+        else:
+            st, sc = "RED",    2
+            note   = (f"⚠️ M2 전년비 {v:.1f}%. 통화 수축! "
+                      "2022~2023년 재현. 자산 가격 하락 압력. 연준 피벗 시점 모니터링.")
+        self._push("M2 전년비 증가율", f"{v:.1f}%", st, sc, f"{v:.1f}%", note)
+
+    def dx_ig(self) -> None:
+        """
+        IG 크레딧 스프레드 (투자등급 회사채)
+        ─────────────────────────────────────────────────────────────
+        IG 스프레드는 HY보다 안정적이나 급등 시 기업 전반의
+        자금 조달 비용 상승을 의미. 100bps(1%) 돌파 시 경보.
+        ─────────────────────────────────────────────────────────────
+        """
+        v = self._last("IG_OAS")
+        if v is None:
+            return
+        if v < 0.9:
+            st, sc = "GREEN",  9
+            note   = f"IG 스프레드 {v:.2f}%. 역사적 저점 수준. 기업 자금 조달 환경 최우호."
+        elif v < 1.5:
+            st, sc = "YELLOW", 6
+            note   = (f"IG 스프레드 {v:.2f}%. 정상 범위. "
+                      "경기 불확실성 일부 반영. HY 스프레드 동반 확대 여부 병행 관찰.")
+        else:
+            st, sc = "RED",    2
+            note   = (f"⚠️ IG 스프레드 {v:.2f}%. 신용 경색 신호. "
+                      "투자등급 기업까지 자금 조달 비용 급등. 시스템 리스크 단계 진입.")
+        self._push("IG 크레딧 스프레드 (투자등급)", f"{v:.2f}%",
+                   st, sc, f"{v:.2f}%", note)
+
+    def dx_bank_lending(self) -> None:
+        """
+        상업은행 대출 전년비 (신용 공급 충동)
+        ─────────────────────────────────────────────────────────────
+        은행 대출 증가율은 실물 경제에 직접 공급되는 민간 신용량.
+        > +6%  : 신용 완화·경기 부양
+        0~6%   : 중립
+        < 0%   : 신용 수축 → 금융 긴축 전달 확인
+        ─────────────────────────────────────────────────────────────
+        """
+        v = self._last("BANK_YOY", "D")
+        if v is None:
+            return
+        if v >= 6:
+            st, sc = "GREEN",  8
+            note   = f"은행 대출 전년비 +{v:.1f}%. 신용 공급 확대. 실물 경기 부양 효과 확인."
+        elif v >= 0:
+            st, sc = "YELLOW", 6
+            note   = f"은행 대출 전년비 +{v:.1f}%. 완만한 성장. 중립 환경."
+        else:
+            st, sc = "RED",    2
+            note   = (f"⚠️ 은행 대출 전년비 {v:.1f}%. 신용 수축! "
+                      "금리 인상 효과가 실물에 전달 중. 기업·가계 자금 조달 위축.")
+        self._push("상업은행 대출 전년비", f"{v:.1f}%",
+                   st, sc, f"{v:.1f}%", note)
+
+    def dx_swap_lines(self) -> None:
+        """
+        Fed 통화스왑라인 잔고 (글로벌 달러 수요)
+        ─────────────────────────────────────────────────────────────
+        ECB·BOJ·BOE 등 주요 중앙은행에 달러를 직접 공급하는 창구.
+        잔고 급증 = 글로벌 달러 부족 신호 (2008·2020년 급등 사례).
+        평상시 거의 0 → 급등 시 즉각 경보.
+        ─────────────────────────────────────────────────────────────
+        """
+        v = self._last("SWPT")
+        if v is None:
+            return
+        if v < 10:
+            st, sc = "GREEN",  9
+            note   = f"스왑라인 잔고 ${v:.0f}B. 정상 수준. 글로벌 달러 부족 없음."
+        elif v < 100:
+            st, sc = "YELLOW", 5
+            note   = (f"스왑라인 잔고 ${v:.0f}B. 소폭 증가. "
+                      "특정 지역 달러 조달 압박 초기 신호. 원인 파악 필요.")
+        else:
+            st, sc = "RED",    1
+            note   = (f"⚠️ 스왑라인 잔고 ${v:.0f}B. 글로벌 달러 위기 수준! "
+                      "2020년 3월($449B) 수준 접근. 즉각 안전자산(달러·금·단기채) 대피.")
+        self._push("Fed 통화스왑라인 잔고", f"${v:.0f}B",
+                   st, sc, f"${v:.0f}B", note)
+
     # ── 종합 판정 ──────────────────────────────────────────────────────
     def run(self) -> tuple:
         """모든 진단을 실행하고 (results, avg_score, verdict, detail)을 반환합니다."""
-        for fn in [self.dx_net_liq, self.dx_rrp, self.dx_tga, self.dx_reserves,
-                   self.dx_sofr, self.dx_hy, self.dx_vix, self.dx_dxy]:
+        ALL_DX = [
+            # ─ Layer 1: Fed 직접 공급 ─────────────────
+            self.dx_net_liq,       # 넷 유동성 (BS−RRP−TGA)
+            self.dx_rrp,           # RRP 잔고
+            self.dx_reserves,      # 은행 지준금
+            self.dx_sofr,          # SOFR−IORB 레포 스프레드
+            # ─ Layer 2: Treasury ─────────────────────
+            self.dx_tga,           # TGA 잔고
+            # ─ Layer 3: 합성 유동성 ──────────────────
+            self.dx_yield_curve,   # 수익률 곡선 10Y−2Y  ★신규
+            self.dx_2y_yield,      # 2년물 금리 (Fed 피벗 신호) ★신규
+            self.dx_m2,            # M2 전년비  ★신규
+            # ─ Layer 4: 시장 스트레스 ─────────────────
+            self.dx_hy,            # HY 크레딧 스프레드
+            self.dx_ig,            # IG 크레딧 스프레드  ★신규
+            self.dx_vix,           # VIX
+            # ─ Layer 5: 글로벌 달러 ──────────────────
+            self.dx_dxy,           # 달러 지수
+            self.dx_swap_lines,    # Fed 통화스왑라인  ★신규
+            # ─ 신용 공급 충동 ─────────────────────────
+            self.dx_bank_lending,  # 상업은행 대출 전년비  ★신규
+        ]
+        for fn in ALL_DX:
             try:
                 fn()
             except Exception as e:
@@ -534,12 +739,13 @@ def build_dashboard(
 
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
-    # ── 서브플롯 레이아웃 (5행 × 3열 + 하단 테이블) ────────────────────
-    #  Row 1: ① 넷 유동성 | ② Fed BS 구성 | ③ RRP 잔고
-    #  Row 2: ④ TGA      | ⑤ 은행 지준금  | ⑥ SOFR-IORB 스프레드
-    #  Row 3: ⑦ HY/IG   | ⑧ VIX         | ⑨ M2 전년비
-    #  Row 4: ⑩ DXY     | ⑪ 기준금리     | ⑫ 지표별 점수
-    #  Row 5: ⑬ 종합 진단 테이블 (colspan=3)
+    # ── 서브플롯 레이아웃 (6행 × 3열 + 하단 테이블) ────────────────────
+    #  Row 1: ① 넷 유동성      | ② Fed BS 구성      | ③ RRP 잔고
+    #  Row 2: ④ TGA            | ⑤ 은행 지준금       | ⑥ SOFR-IORB
+    #  Row 3: ⑦ HY/IG 스프레드 | ⑧ VIX              | ⑨ M2 전년비
+    #  Row 4: ⑩ 달러 지수      | ⑪ 수익률 곡선       | ⑫ 2Y/10Y 금리
+    #  Row 5: ⑬ 은행 대출 증가율| ⑭ Fed 스왑라인     | ⑮ 지표별 점수
+    #  Row 6: ⑯ 종합 진단 테이블 (colspan=3)
     TITLES = [
         "① 넷 유동성 (BS − RRP − TGA,  $B)",
         "② Fed 대차대조표 구성  ($B)",
@@ -551,22 +757,26 @@ def build_dashboard(
         "⑧ VIX",
         "⑨ M2 전년비 증가율  (%)",
         "⑩ 달러 지수 (Broad DXY)",
-        "⑪ 기준금리  (%)",
-        "⑫ 지표별 유동성 점수  (0~10)",
-        "⑬ 종합 유동성 진단",
+        "⑪ 수익률 곡선 10Y − 2Y  (%)",
+        "⑫ 2년물 / 10년물 국채금리  (%)",
+        "⑬ 상업은행 대출 전년비  (%)",
+        "⑭ Fed 통화스왑라인  ($B)",
+        "⑮ 지표별 유동성 점수  (0~10)",
+        "⑯ 종합 유동성 진단",
     ]
 
     fig = make_subplots(
-        rows=5, cols=3,
+        rows=6, cols=3,
         subplot_titles=TITLES,
         specs=[
             [{}, {}, {}],
             [{}, {}, {}],
             [{}, {}, {}],
             [{}, {}, {}],
+            [{}, {}, {}],
             [{"colspan": 3, "type": "table"}, None, None],
         ],
-        vertical_spacing=0.065,
+        vertical_spacing=0.055,
         horizontal_spacing=0.055,
     )
 
@@ -692,16 +902,45 @@ def build_dashboard(
     _hline(fig, 5,  S_GRN, "+5% 완화선", 3, 3)
 
     # ══════════════════════════════════════════════════════════════════
-    #  Row 4 ─ DXY | FFR | 지표별 점수 (수평 바)
+    #  Row 4 ─ 달러 지수 | 수익률 곡선 | 2Y / 10Y / FFR 금리
     # ══════════════════════════════════════════════════════════════════
     area(4, 1, S("DXY"), C_ORG, "달러 지수")
-    area(4, 2, S("FFR"), C_GRN, "기준금리")
 
+    # ⑪ 수익률 곡선 (10Y-2Y) 막대 ─ 역전 구간 빨간색으로 자동 표시
+    bar(4, 2, S("T10Y2Y"),
+        lambda v: S_GRN if v > 0 else (S_YLW if v > -0.5 else S_RED),
+        "10Y−2Y")
+    _hline(fig,    0, C_MUT,  "0% 기준",    4, 2, dash="solid")
+    _hline(fig, -0.5, S_RED,  "-0.5% 경보", 4, 2)
+
+    # ⑫ 2년물 / 10년물 / 기준금리 비교
+    ln(4, 3, S("DGS2"),  C_RED, "2년물",   legend=True, legend_group="legend3")
+    ln(4, 3, S("DGS10"), C_BLU, "10년물",  legend=True, legend_group="legend3")
+    ln(4, 3, S("FFR"),   C_MUT, "기준금리", legend=True, legend_group="legend3",
+       dash="dot", width=1.2)
+
+    # ══════════════════════════════════════════════════════════════════
+    #  Row 5 ─ 상업은행 대출 전년비 | Fed 스왑라인 | 지표별 점수
+    # ══════════════════════════════════════════════════════════════════
+    # ⑬ 상업은행 대출 전년비
+    bar(5, 1, S("BANK_YOY", "D"),
+        lambda v: S_GRN if v >= 6 else (S_YLW if v >= 0 else S_RED),
+        "은행 대출 전년비")
+    _hline(fig, 6, S_GRN, "+6% 완화", 5, 1)
+    _hline(fig, 0, C_MUT, "0% 기준",  5, 1, dash="solid")
+
+    # ⑭ Fed 통화스왑라인
+    area(5, 2, S("SWPT"), C_PRP, "통화스왑라인")
+    _hline(fig, 100, S_YLW, "$100B 경계", 5, 2)
+    _hline(fig, 300, S_RED,  "$300B 위기", 5, 2)
+
+    # ⑮ 지표별 점수 (수평 바) ─ 지표 수가 늘었으므로 마진 조정
     if results:
         r_names  = [r.name for r in results]
         r_scores = [r.score for r in results]
         r_colors = [{"GREEN": S_GRN, "YELLOW": S_YLW, "RED": S_RED}[r.status]
                     for r in results]
+        _filled.add((5, 3))
         fig.add_trace(go.Bar(
             x=r_scores, y=r_names, orientation="h",
             marker_color=r_colors,
@@ -709,19 +948,19 @@ def build_dashboard(
             textposition="outside",
             showlegend=False,
             hovertemplate="%{y}<br>점수: %{x}/10<extra></extra>",
-        ), row=4, col=3)
-        fig.update_xaxes(range=[0, 12.5], row=4, col=3)
+        ), row=5, col=3)
+        fig.update_xaxes(range=[0, 13.5], row=5, col=3)
         fig.add_vline(
             x=avg_score,
             line=dict(color=C_WHT, width=1.2, dash="dash"),
             annotation_text=f"평균 {avg_score}",
             annotation_font_size=9,
             annotation_font_color=C_WHT,
-            row=4, col=3,
+            row=5, col=3,
         )
 
     # ══════════════════════════════════════════════════════════════════
-    #  Row 5 ─ 종합 진단 테이블
+    #  Row 6 ─ 종합 진단 테이블
     # ══════════════════════════════════════════════════════════════════
     if results:
         ST_LABEL = {"GREEN": "🟢 완화", "YELLOW": "🟡 중립", "RED": "🔴 긴축"}
@@ -731,7 +970,7 @@ def build_dashboard(
             "RED":    "rgba(218,54,51,0.14)",
         }
         fig.add_trace(go.Table(
-            columnwidth=[170, 100, 88, 215, 368],
+            columnwidth=[175, 100, 88, 210, 370],
             header=dict(
                 values=["<b>지표명</b>", "<b>현재값</b>", "<b>상태</b>",
                         "<b>진단 요약</b>", "<b>상세 설명</b>"],
@@ -753,14 +992,14 @@ def build_dashboard(
                 font=dict(color="#C9D1D9", size=11),
                 line_color="#30363D",
                 align=["left", "center", "center", "left", "left"],
-                height=56,
+                height=52,
             ),
-        ), row=5, col=1)
+        ), row=6, col=1)
 
     # ══════════════════════════════════════════════════════════════════
     #  빈 서브플롯에 "데이터 없음" 텍스트 삽입
     # ══════════════════════════════════════════════════════════════════
-    ALL_PLOTS = [(r, c) for r in range(1, 5) for c in range(1, 4)]
+    ALL_PLOTS = [(r, c) for r in range(1, 6) for c in range(1, 4)]
     for _r, _c in ALL_PLOTS:
         if (_r, _c) not in _filled:
             _no_data(_r, _c)
@@ -792,14 +1031,20 @@ def build_dashboard(
         legend=dict(
             bgcolor="rgba(22,27,34,0.85)", bordercolor="#30363D",
             font=dict(color=C_MUT, size=10),
-            x=0.37, y=0.998, orientation="h",
+            x=0.37, y=0.999, orientation="h",
             title=dict(text="② Fed 대차대조표", font=dict(size=9, color=C_MUT)),
         ),
         legend2=dict(
             bgcolor="rgba(22,27,34,0.85)", bordercolor="#30363D",
             font=dict(color=C_MUT, size=10),
-            x=0.005, y=0.425, orientation="v",
+            x=0.005, y=0.565, orientation="v",
             title=dict(text="⑦ 크레딧", font=dict(size=9, color=C_MUT)),
+        ),
+        legend3=dict(
+            bgcolor="rgba(22,27,34,0.85)", bordercolor="#30363D",
+            font=dict(color=C_MUT, size=10),
+            x=0.680, y=0.345, orientation="v",
+            title=dict(text="⑫ 금리", font=dict(size=9, color=C_MUT)),
         ),
     )
 
@@ -820,7 +1065,7 @@ def build_dashboard(
             family="Malgun Gothic, Apple SD Gothic Neo, NanumGothic, Arial",
             color="#C9D1D9",
         ),
-        height=2100,
+        height=2600,
         margin=dict(l=65, r=50, t=190, b=40),
         barmode="group",
     )
