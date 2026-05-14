@@ -1,8 +1,8 @@
 name: 매크로 스트레스 리포트 v2
 
 on:
-  # schedule:
-  #   - cron: '30 23 * * 1-5'
+  schedule:
+     - cron: '30 23 * * 1-5'
   workflow_dispatch:
 
 jobs:
