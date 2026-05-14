@@ -21,7 +21,7 @@ jobs:
 
       - name: 패키지 설치
         run: |
-          pip install yfinance pandas plotly requests kaleido
+          pip install yfinance pandas plotly requests kaleido fredapi
 
       - name: 리포트 실행 & 텔레그램 전송
         env:
