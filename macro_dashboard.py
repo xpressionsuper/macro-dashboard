@@ -95,7 +95,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 # TELEGRAM_TOKEN   = "123456789:AAxxxxxxxxxxxxxxxxxxxxxx"
 # TELEGRAM_CHAT_ID = "987654321"
 
-LOOKBACK_DAYS = 365 * 3               # 기본 3년 (최대 10년 가능)
+LOOKBACK_DAYS = 365 * 10               # 기본 3년 (최대 10년 가능)
 OUTPUT_HTML   = "liquidity_dashboard.html"
 AUTO_OPEN     = False                 # GitHub Actions 환경에서는 False 유지
 
