@@ -1,0 +1,38 @@
+name: 매크로 유동성 모니터 v3
+
+on:
+  schedule:
+    - cron: '0 22 * * 4'   # 매주 금요일 오전 7시 KST (UTC 목 22:00)
+  workflow_dispatch:         # 수동 실행 버튼
+
+jobs:
+  run-monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: 모니터 실행
+        env:
+          FRED_API_KEY:     ${{ secrets.FRED_API_KEY }}
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py
+
+      - name: HTML 대시보드 아티팩트 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macro-dashboard-${{ github.run_number }}
+          path: macro_dashboard.html
+          retention-days: 30
