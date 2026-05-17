@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore")
 
 # ── 의존성 사전 확인 ──────────────────────────────────────────────────
 _REQUIRED = ["fredapi", "plotly", "pandas", "numpy", "requests"]
-_missing  = [p for p in _REQUIRED if not __import__("importlib").util.find_spec(p)]
+_missing  = [p for p in _REQUIRED if not importlib.util.find_spec(p)] # 👈 깔끔하게 변경
 if _missing:
     print(f"❌ 미설치 패키지: {', '.join(_missing)}")
     print(f"   실행: pip install {' '.join(_missing)}")
