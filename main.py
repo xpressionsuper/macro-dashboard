@@ -24,6 +24,8 @@ from datetime import datetime
 warnings.filterwarnings("ignore")
 
 # ── 의존성 사전 확인 ──────────────────────────────────────────────────
+import importlib.util  # 👈 [필수] 이 모듈을 임포트해야 NameError가 안 납니다!
+
 _REQUIRED = ["fredapi", "plotly", "pandas", "numpy", "requests"]
 _missing  = [p for p in _REQUIRED if not importlib.util.find_spec(p)] # 👈 깔끔하게 변경
 if _missing:
