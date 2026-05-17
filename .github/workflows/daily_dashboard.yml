@@ -2,7 +2,7 @@ name: 매크로 스트레스 리포트 v2
 
 on:
   schedule:
-     - cron: '30 23 * * 1-5'
+    - cron: '0 9 * * 5'   # 매주 금요일 오전 7시 (KST) = UTC 목요일 22:00
   workflow_dispatch:
 
 jobs:
