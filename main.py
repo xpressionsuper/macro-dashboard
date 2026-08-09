@@ -85,7 +85,11 @@ class MacroDashboard:
 
         # ── [5] HTML 저장 ──────────────────────────────────────────────
         print("\n[5/6]  HTML 대시보드 생성")
-        HtmlExporter(figures, results, timestamp).export(cfg.OUTPUT_HTML)
+        HtmlExporter(
+            figures, results, timestamp, cfg.CATEGORY_META,
+            page_title="🏦 미국 달러 유동성 대시보드",
+            sidebar_title="📊 매크로 모니터",
+        ).export(cfg.OUTPUT_HTML)
 
         # ── [6] 텔레그램 전송 ─────────────────────────────────────────
         print("\n[6/6]  텔레그램 전송")
@@ -109,7 +113,37 @@ class MacroDashboard:
         if not tga.empty:
             raw["TGA"] = tga
 
+        # 모든 차트에 겹쳐 그릴 시장 벤치마크 (S&P500, 금)
+        raw["SPX"]  = fred_client.fetch_series("SP500", label="S&P500 (오버레이)")
+        raw["GOLD"] = self._fetch_yahoo_series("GC=F", label="금 선물 (오버레이)")
+
         return raw
+
+    @staticmethod
+    def _fetch_yahoo_series(symbol: str, label: str) -> pd.Series:
+        """Yahoo Finance 차트 API에서 일봉 종가를 가져옵니다 (키 불필요)."""
+        import requests
+
+        try:
+            resp = requests.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+                params={"range": "10y", "interval": "1d"},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=15,
+            )
+            data   = resp.json()["chart"]["result"][0]
+            ts     = data["timestamp"]
+            closes = data["indicators"]["quote"][0]["close"]
+            s = pd.Series(
+                closes,
+                index=pd.to_datetime(ts, unit="s").normalize(),
+                name=symbol,
+            ).dropna()
+            print(f"  ✅  {label:<36} [{symbol}]  {len(s)} pts")
+            return s
+        except Exception as exc:
+            print(f"  ❌  {label:<36} [{symbol}]  최종 실패 → {exc}")
+            return pd.Series(dtype=float, name=symbol)
 
     # ── 카테고리별 진단 ───────────────────────────────────────────────
 
@@ -150,7 +184,7 @@ class MacroDashboard:
         print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║         📊  미국 달러 유동성 종합 모니터  v3.0                        ║
-║  ① Fed BS·RRP·지준금  ② TGA  ③ Net LIQ·SOFR Spread·M2             ║
+║  ① Fed BS·RRP·지급준비금  ② TGA  ③ Net LIQ·SOFR Spread·M2             ║
 ║  ④ HY/IG OAS·VIX·수익률곡선  ⑤ 스왑라인·DXY·JPY                   ║
 ╚══════════════════════════════════════════════════════════════════════╝""")
 

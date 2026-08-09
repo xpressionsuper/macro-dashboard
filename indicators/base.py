@@ -38,6 +38,8 @@ class IndicatorResult:
     latest_date:  str
 
     # ── 변화량 ────────────────────────────────────────────────────────
+    when_up:   str = ""                # 이 지표가 "증가"할 때 벌어지는 일과 의미
+    when_down: str = ""                # 이 지표가 "감소"할 때 벌어지는 일과 의미
     chg_1w:  Optional[float] = None    # 1주(7일) 변화
     chg_1m:  Optional[float] = None    # 1개월(30일) 변화
     chg_3m:  Optional[float] = None    # 3개월(90일) 변화
@@ -47,6 +49,11 @@ class IndicatorResult:
     pct_rank:    Optional[float] = None   # 5년 내 퍼센타일 순위 (0~100)
     trend_label: str = ""                 # "5년 최고", "역대 최저" 등
     context:     str = ""                 # 현 수준 요약 문장
+
+    # ── 대표 증감 (카드에 크게 표시) ──────────────────────────────────
+    chg_disp:        Optional[float] = None   # 전월/전년대비 변화량 (%p 또는 %)
+    chg_disp_label:  str = ""                 # "전월대비" / "전년대비"
+    chg_disp_is_pct: bool = True              # True=% 변화, False=포인트(±X) 변화
 
     # ── 차트용 원시 시계열 ────────────────────────────────────────────
     series: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
@@ -100,6 +107,7 @@ class BaseIndicatorGroup(abc.ABC):
                 description=meta.description, direction=meta.direction,
                 source=meta.source, category=meta.category, unit=meta.unit,
                 latest_value=float("nan"), latest_date="N/A",
+                when_up=meta.when_up, when_down=meta.when_down,
                 context="데이터 수집 실패",
             )
 
@@ -117,13 +125,21 @@ class BaseIndicatorGroup(abc.ABC):
         trend_label = self._trend_label(s, pct_rank)
         context     = self._context_text(meta, latest_value, chg_1m, chg_1y, pct_rank, s)
 
+        is_pct = meta.chg_as_point is not True if meta.chg_as_point is not None \
+            else meta.unit not in ("%", "%p", "bps")
+        days  = 365 if meta.compare_yoy else 30
+        label = "전년대비" if meta.compare_yoy else "전월대비"
+        chg_disp = self._pct_change(s, days) if is_pct else self._change(s, days)
+
         return IndicatorResult(
             key=meta.key, name_ko=meta.name_ko, name_en=meta.name_en,
             description=meta.description, direction=meta.direction,
             source=meta.source, category=meta.category, unit=meta.unit,
             latest_value=latest_value, latest_date=latest_date,
+            when_up=meta.when_up, when_down=meta.when_down,
             chg_1w=chg_1w, chg_1m=chg_1m, chg_3m=chg_3m, chg_1y=chg_1y,
             pct_rank=pct_rank, trend_label=trend_label, context=context,
+            chg_disp=chg_disp, chg_disp_label=label, chg_disp_is_pct=is_pct,
             series=s,
         )
 
@@ -139,6 +155,20 @@ class BaseIndicatorGroup(abc.ABC):
         if past.empty:
             return None
         return float(s.iloc[-1] - past.iloc[-1])
+
+    @staticmethod
+    def _pct_change(s: pd.Series, days: int) -> Optional[float]:
+        """n일 전 값 대비 퍼센트 변화율. 기준값이 0에 가까우면 계산하지 않음."""
+        if s.empty:
+            return None
+        target = s.index[-1] - timedelta(days=days)
+        past   = s[s.index <= target]
+        if past.empty:
+            return None
+        base = past.iloc[-1]
+        if base == 0 or abs(base) < 1e-9:
+            return None
+        return float((s.iloc[-1] - base) / abs(base) * 100)
 
     @staticmethod
     def _percentile_rank(s: pd.Series) -> Optional[float]:
@@ -212,3 +242,22 @@ class BaseIndicatorGroup(abc.ABC):
             parts.append(f"1년 {dir_s} {val_s}")
 
         return " | ".join(parts) if parts else "데이터 부족"
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  범용 지표 그룹 (카테고리별 특수 보강 없이 메타 목록만 진단)
+# ══════════════════════════════════════════════════════════════════════
+class GenericIndicatorGroup(BaseIndicatorGroup):
+    """IndicatorMeta 리스트 하나를 그대로 진단하는 범용 그룹."""
+
+    def __init__(self, raw: dict[str, pd.Series], indicators: list, category_num: int, category_name: str):
+        super().__init__(raw)
+        self._indicators   = indicators
+        self.category_num  = category_num
+        self.category_name = category_name
+
+    def diagnose(self) -> list[IndicatorResult]:
+        return [
+            self._compute_result(meta, self.raw.get(meta.key, pd.Series(dtype=float)))
+            for meta in self._indicators
+        ]

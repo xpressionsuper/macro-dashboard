@@ -17,16 +17,16 @@ class TreasuryClient:
     """Treasury Fiscal Data API에서 TGA 잔고를 수집합니다."""
 
     _BASE_URL = (
-        "https://api.fiscaldata.treasury.gov/services/api/v1"
+        "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1"
         "/accounting/dts/operating_cash_balance"
     )
 
     # account_type 필드가 API 버전에 따라 다를 수 있어 복수 패턴 매칭
     _SEARCH_PATTERNS = [
+        "Treasury General Account (TGA) Closing Balance",
         "Federal Reserve",
         "federal reserve",
         "Deposits, Federal",
-        "Treasury General Account",
     ]
 
     def __init__(self):

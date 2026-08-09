@@ -60,11 +60,11 @@ class NetLiquidityGroup(BaseIndicatorGroup):
         val = r.latest_value
         if not np.isnan(val):
             if val > 10:
-                parts.append(f"{val:.1f}bps — SOFR가 IORB 상회 중 (지준금 희소 신호)")
+                parts.append(f"{val:.1f}bps — SOFR가 IORB 상회 중 (지급준비금 희소 신호)")
             elif val > 0:
                 parts.append(f"{val:.1f}bps — 정상 범위 (소폭 양수)")
             else:
-                parts.append(f"{val:.1f}bps — SOFR가 IORB 하회 (지준금 충분)")
+                parts.append(f"{val:.1f}bps — SOFR가 IORB 하회 (지급준비금 충분)")
         if r.pct_rank is not None:
             parts.append(f"5년 기간 중 {r.pct_rank:.0f}% 수준")
         return " | ".join(parts)

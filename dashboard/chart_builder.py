@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -56,26 +57,28 @@ class ChartBuilder:
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def build_all(self) -> dict[int, go.Figure]:
+    def build_all(self) -> dict[int, list[tuple[go.Figure, list[IndicatorResult]]]]:
         """
-        카테고리 번호 → Figure 딕셔너리를 반환합니다.
+        카테고리 번호 → [(Figure, 슬롯에 포함된 지표들), ...] 리스트.
+        슬롯에 포함된 지표 목록은 설명 박스를 만드는 데 사용됩니다.
         """
         categories: dict[int, list[IndicatorResult]] = {}
         for r in self._results.values():
             categories.setdefault(r.category, []).append(r)
 
         return {
-            cat: self._build_category_figure(cat_results)
+            cat: self._build_category_figures(cat_results)
             for cat, cat_results in sorted(categories.items())
         }
 
     # ── 카테고리 Figure 조립 ─────────────────────────────────────────
 
-    def _build_category_figure(
+    def _build_category_figures(
         self, results: list[IndicatorResult]
-    ) -> go.Figure:
+    ) -> list[tuple[go.Figure, list[IndicatorResult]]]:
         """
-        한 카테고리 내 지표들의 차트 배치를 결정하고 Figure를 생성합니다.
+        한 카테고리 내 지표들을 슬롯으로 묶고, 슬롯마다 정사각형에 가까운
+        (3:4) 개별 Figure를 만들어 (Figure, 슬롯 지표 목록) 리스트로 반환합니다.
         """
         # 그릴 차트 단위 목록 구성
         chart_slots: list[list[IndicatorResult]] = []
@@ -107,29 +110,17 @@ class ChartBuilder:
         # NET_LIQ 슬롯은 구성 요소(BS/RRP/TGA) 오버레이 처리
         chart_slots = self._inject_net_liq_components(chart_slots)
 
-        n_rows = len(chart_slots)
-        if n_rows == 0:
-            return go.Figure()
-
-        fig = make_subplots(
-            rows=n_rows, cols=1,
-            subplot_titles=[
-                " & ".join(r.name_ko for r in slot)
-                for slot in chart_slots
-            ],
-            vertical_spacing=0.08,
-            shared_xaxes=False,
-        )
-
         self._color_idx = 0
+        figures = []
+        for slot in chart_slots:
+            fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+            self._add_slot_traces(fig, slot, 1)
+            self._add_benchmark_overlays(fig, 1)
+            title = " & ".join(r.name_ko for r in slot)
+            self._apply_layout(fig, width=580, height=330, title=title)
+            figures.append((fig, slot))
 
-        for row_idx, slot in enumerate(chart_slots, start=1):
-            self._add_slot_traces(fig, slot, row_idx)
-
-        height = max(380 * n_rows, 400)
-        self._apply_layout(fig, height)
-
-        return fig
+        return figures
 
     # ── 슬롯별 트레이스 추가 ─────────────────────────────────────────
 
@@ -149,18 +140,14 @@ class ChartBuilder:
             series = r.series
             unit   = r.unit
 
-            # 채우기 영역 (첫 번째 지표에만)
-            fill = "tozeroy" if i == 0 and len(slot) == 1 else "none"
-
             fig.add_trace(
                 go.Scatter(
                     x=series.index,
                     y=series.values,
                     name=r.name_ko,
+                    mode="lines",
                     line=dict(color=color, width=1.8),
-                    fill=fill,
-                    fillcolor=color.replace(")", ", 0.08)").replace("rgb(", "rgba(")
-                              if fill != "none" else "rgba(0,0,0,0)",
+                    fill="none",
                     hovertemplate=(
                         f"<b>{r.name_ko}</b><br>"
                         f"%{{x|%Y-%m-%d}}<br>"
@@ -187,22 +174,51 @@ class ChartBuilder:
             # T10Y2Y: 0선 강조
             if slot[0].key == "T10Y2Y":
                 fig.add_hline(
-                    y=0,
-                    line_dash="dot",
-                    line_color="#ff6b6b",
-                    line_width=1,
+                    y=0, line_dash="dot", line_color="#ff6b6b", line_width=1,
                     row=row, col=1,
                 )
-
             # NFCI: 0선
             if slot[0].key == "NFCI":
                 fig.add_hline(
-                    y=0,
-                    line_dash="dot",
-                    line_color="#ffd166",
-                    line_width=1,
+                    y=0, line_dash="dot", line_color="#ffd166", line_width=1,
                     row=row, col=1,
                 )
+            # 단기채 비중: 재무부가 통상 관리하는 15~20% 구간 음영
+            if slot[0].key == "DEBT_SHORT_SHARE":
+                fig.add_hrect(
+                    y0=15, y1=20, fillcolor="#06d6a0", opacity=0.12, line_width=0,
+                    row=row, col=1,
+                )
+
+    # ── 시장 벤치마크(S&P500·금) 오버레이 ────────────────────────────
+
+    _BENCHMARKS = [
+        ("SPX",  "S&P500", "#f4a261", "dot"),
+        ("GOLD", "금",     "#ffd700", "dash"),
+    ]
+
+    def _add_benchmark_overlays(self, fig: go.Figure, row: int) -> None:
+        """모든 차트 오른쪽 보조축에 S&P500·금 가격을 겹쳐 그립니다."""
+        for key, label, color, dash in self._BENCHMARKS:
+            series = self._raw.get(key, pd.Series(dtype=float))
+            if series.empty:
+                continue
+            fig.add_trace(
+                go.Scatter(
+                    x=series.index,
+                    y=series.values,
+                    name=label,
+                    mode="lines",
+                    line=dict(color=color, width=1.2, dash=dash),
+                    opacity=0.6,
+                    hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:,.0f}}<extra></extra>",
+                ),
+                row=row, col=1, secondary_y=True,
+            )
+        fig.update_yaxes(
+            secondary_y=True, row=row, col=1,
+            showgrid=False, title_text="", tickfont=dict(size=9),
+        )
 
     # ── NET_LIQ 구성 요소 오버레이 주입 ─────────────────────────────
 
@@ -245,20 +261,21 @@ class ChartBuilder:
     # ── 레이아웃 공통 설정 ────────────────────────────────────────────
 
     @staticmethod
-    def _apply_layout(fig: go.Figure, height: int) -> None:
+    def _apply_layout(fig: go.Figure, width: int, height: int, title: str = "") -> None:
         fig.update_layout(
+            width=width,
             height=height,
             template=THEME,
+            title=dict(text=title, font=dict(size=14), x=0.05, y=0.97),
             paper_bgcolor=PAPER_COLOR,
             plot_bgcolor=BG_COLOR,
-            font=dict(family=FONT_FAMILY, color=FONT_COLOR, size=11),
+            font=dict(family=FONT_FAMILY, color=FONT_COLOR, size=12),
             legend=dict(
                 orientation="h",
-                yanchor="bottom", y=1.02,
-                xanchor="right",  x=1,
-                font=dict(size=10),
+                yanchor="bottom", y=1.0,
+                xanchor="left",  x=0,
+                font=dict(size=11),
             ),
-            margin=dict(l=60, r=30, t=60, b=40),
+            margin=dict(l=50, r=20, t=60, b=35),
             hovermode="x unified",
         )
-        fig.update_annotations(font_size=11, font_color=FONT_COLOR)

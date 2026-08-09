@@ -77,7 +77,7 @@ class DerivedCalculator:
             return pd.Series(dtype=float, name="SOFR_SPR")
 
         df  = pd.DataFrame({"SOFR": sofr, "IORB": iorb}).dropna()
-        spr = ((df["SOFR"] - df["IORB"]) * 100).rename("SOFR_SPR")  # % → bps
+        spr = (df["SOFR"] - df["IORB"]).rename("SOFR_SPR")  # 이미 bps 단위라 그대로 차감
         return spr
 
     def _m2_yoy(self) -> pd.Series:

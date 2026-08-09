@@ -13,13 +13,14 @@ dashboard/html_exporter.py ─ HTML 대시보드 조립 & 저장
 from __future__ import annotations
 
 import json
+import math
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 import plotly.graph_objects as go
 import plotly.io as pio
 
-from config import CATEGORY_META
 from indicators.base import IndicatorResult
 
 
@@ -39,7 +40,7 @@ _CSS = """
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: var(--bg); color: var(--text); font-family: var(--font);
-       font-size: 13px; line-height: 1.6; }
+       font-size: 17px; line-height: 1.6; }
 
 /* ── 레이아웃 ── */
 .layout { display: flex; min-height: 100vh; }
@@ -50,31 +51,34 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
 .main { flex: 1; padding: 24px; overflow-x: hidden; }
 
 /* ── 사이드바 ── */
-.sidebar-title { padding: 0 16px 16px; font-size: 14px; font-weight: 700;
+.sidebar-title { padding: 0 16px 16px; font-size: 18px; font-weight: 700;
                  color: var(--accent); border-bottom: 1px solid var(--border);
                  margin-bottom: 8px; }
 .nav-item { display: block; padding: 10px 16px; cursor: pointer;
-            color: var(--muted); font-size: 12px; border-radius: 0;
+            color: var(--muted); font-size: 16px; border-radius: 0;
             transition: all .2s; border-left: 3px solid transparent; }
 .nav-item:hover { color: var(--text); background: rgba(255,255,255,.03); }
 .nav-item.active { color: var(--accent); border-left-color: var(--accent);
                    background: rgba(0,212,255,.06); }
+.nav-group { padding: 14px 16px 4px; font-size: 12px; font-weight: 700;
+             color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.nav-group:first-child { padding-top: 0; }
 
 /* ── 헤더 ── */
 .page-header { margin-bottom: 28px; }
-.page-title { font-size: 22px; font-weight: 700; color: var(--accent); }
-.page-subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.page-title { font-size: 26px; font-weight: 700; color: var(--accent); }
+.page-subtitle { color: var(--muted); font-size: 16px; margin-top: 4px; }
 
 /* ── 카테고리 섹션 ── */
 .category-section { margin-bottom: 48px; scroll-margin-top: 20px; }
 .category-header { display: flex; align-items: baseline; gap: 12px;
                    margin-bottom: 6px; }
-.category-name { font-size: 16px; font-weight: 700; color: var(--text); }
-.category-desc { font-size: 11px; color: var(--muted); }
+.category-name { font-size: 20px; font-weight: 700; color: var(--text); }
+.category-desc { font-size: 15px; color: var(--muted); }
 
 /* ── 요약 테이블 ── */
 .summary-table { width: 100%; border-collapse: collapse;
-                 margin: 14px 0 20px; font-size: 12px; }
+                 margin: 14px 0 20px; font-size: 16px; }
 .summary-table th { background: var(--surface); color: var(--muted);
                     font-weight: 600; text-align: left;
                     padding: 8px 12px; border-bottom: 1px solid var(--border); }
@@ -90,13 +94,37 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
              background: var(--border); border-radius: 3px; vertical-align: middle;
              margin-right: 6px; }
 .pct-fill  { height: 100%; border-radius: 3px; background: var(--accent); }
-.desc-cell { color: var(--muted); font-size: 11px; max-width: 260px;
+.desc-cell { color: var(--muted); font-size: 15px; max-width: 260px;
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ctx-cell  { font-size: 11px; color: var(--muted); max-width: 320px; }
+.ctx-cell  { font-size: 15px; color: var(--muted); max-width: 320px; }
 
-/* ── 차트 ── */
-.chart-wrap { background: var(--surface); border: 1px solid var(--border);
-              border-radius: 8px; padding: 4px; margin-bottom: 8px; }
+/* ── 지표 행 (설명 → 차트 → 증가/감소) ── */
+.indicator-rows { display: flex; flex-direction: column; gap: 12px; margin: 14px 0 24px; }
+.indicator-row { display: flex; align-items: stretch; gap: 14px; flex-wrap: wrap;
+                 background: var(--surface); border: 1px solid var(--border);
+                 border-radius: 8px; padding: 12px 16px; }
+.row-desc  { flex: 1 1 240px; min-width: 200px; }
+.row-head  { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+             margin-bottom: 6px; }
+.row-name  { font-size: 17px; font-weight: 700; color: var(--accent); }
+.row-en    { font-size: 12px; color: var(--muted); }
+.row-val   { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 15px; }
+.row-date  { font-size: 12px; color: var(--muted); }
+.row-chg   { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px;
+             padding: 2px 7px; border-radius: 999px; }
+.row-chg.up   { color: var(--up);   background: rgba(63,185,80,.12); }
+.row-chg.down { color: var(--down); background: rgba(248,81,73,.12); }
+.row-text  { font-size: 15px; color: var(--text); line-height: 1.55; }
+.row-chart { flex: 0 0 auto; }
+.row-chart .chart-wrap { background: transparent; border: none; padding: 0; overflow-x: auto; }
+.row-updown { flex: 1 1 240px; min-width: 220px; display: flex; flex-direction: column; gap: 8px; }
+.detail-row { font-size: 16px; font-weight: 600; line-height: 1.5;
+              padding: 10px 12px; border-radius: 6px; }
+.detail-row.up   { background: rgba(63,185,80,.1);  border: 1px solid var(--up); }
+.detail-row.down { background: rgba(248,81,73,.1); border: 1px solid var(--down); }
+.detail-row b { display: block; margin-bottom: 4px; font-size: 15px; }
+.detail-row.up b   { color: var(--up); }
+.detail-row.down b { color: var(--down); }
 """
 
 _JS_NAV = """
@@ -133,13 +161,23 @@ class HtmlExporter:
 
     def __init__(
         self,
-        figures:   dict[int, go.Figure],
-        results:   list[IndicatorResult],
-        timestamp: str,
+        figures:      dict[int, list[tuple[go.Figure, list[IndicatorResult]]]],
+        results:      list[IndicatorResult],
+        timestamp:    str,
+        category_meta: dict[int, tuple[str, str, list]],
+        page_title:   str = "🏦 미국 달러 유동성 대시보드",
+        sidebar_title: str = "📊 매크로 모니터",
+        data_sources: str = "FRED · TreasuryDirect · NY Fed",
+        sidebar_groups: Optional[list[tuple[str, list[int]]]] = None,
     ):
-        self._figures   = figures
-        self._results   = {r.key: r for r in results}
-        self._timestamp = timestamp
+        self._figures       = figures
+        self._results       = {r.key: r for r in results}
+        self._timestamp     = timestamp
+        self._category_meta = category_meta
+        self._page_title    = page_title
+        self._sidebar_title = sidebar_title
+        self._data_sources  = data_sources
+        self._sidebar_groups = sidebar_groups   # [(그룹명, [카테고리 번호...]), ...]
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -160,7 +198,7 @@ class HtmlExporter:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>매크로 유동성 모니터 — {self._timestamp}</title>
+  <title>{self._page_title} — {self._timestamp}</title>
   <style>{_CSS}</style>
 </head>
 <body>
@@ -177,29 +215,39 @@ class HtmlExporter:
     # ── 사이드바 ──────────────────────────────────────────────────────
 
     def _build_sidebar(self) -> str:
-        items = "\n".join(
-            f'<div class="nav-item" data-target="cat-{cat}">{name}</div>'
-            for cat, (name, _, _) in CATEGORY_META.items()
-        )
+        if self._sidebar_groups:
+            items = "\n".join(self._build_sidebar_group(label, cats) for label, cats in self._sidebar_groups)
+        else:
+            items = "\n".join(
+                f'<div class="nav-item" data-target="cat-{cat}">{name}</div>'
+                for cat, (name, _, _) in self._category_meta.items()
+            )
         return f"""
 <aside class="sidebar">
-  <div class="sidebar-title">📊 매크로 모니터</div>
+  <div class="sidebar-title">{self._sidebar_title}</div>
   {items}
 </aside>"""
+
+    def _build_sidebar_group(self, label: str, cats: list[int]) -> str:
+        rows = "\n".join(
+            f'<div class="nav-item" data-target="cat-{cat}">{self._category_meta[cat][0]}</div>'
+            for cat in cats if cat in self._category_meta
+        )
+        return f'<div class="nav-group">{label}</div>{rows}'
 
     # ── 메인 콘텐츠 ──────────────────────────────────────────────────
 
     def _build_main(self) -> str:
         header = f"""
 <div class="page-header">
-  <div class="page-title">🏦 미국 달러 유동성 대시보드</div>
+  <div class="page-title">{self._page_title}</div>
   <div class="page-subtitle">생성: {self._timestamp} &nbsp;|&nbsp;
-    데이터: FRED · TreasuryDirect · NY Fed</div>
+    데이터: {self._data_sources}</div>
 </div>"""
 
         sections = "\n".join(
             self._build_category_section(cat)
-            for cat in sorted(CATEGORY_META.keys())
+            for cat in sorted(self._category_meta.keys())
         )
 
         return header + sections
@@ -207,17 +255,9 @@ class HtmlExporter:
     # ── 카테고리 섹션 ─────────────────────────────────────────────────
 
     def _build_category_section(self, cat: int) -> str:
-        name, desc, indicators = CATEGORY_META[cat]
+        name, desc, _indicators = self._category_meta[cat]
 
-        # 이 카테고리에 해당하는 결과만
-        cat_results = [
-            self._results[m.key]
-            for m in indicators
-            if m.key in self._results
-        ]
-
-        table  = self._build_summary_table(cat_results)
-        charts = self._build_chart_html(cat)
+        rows = self._build_indicator_rows(cat)
 
         return f"""
 <section class="category-section" id="cat-{cat}">
@@ -225,90 +265,101 @@ class HtmlExporter:
     <span class="category-name">{name}</span>
     <span class="category-desc">{desc}</span>
   </div>
-  {table}
-  {charts}
+  {rows}
 </section>"""
 
-    # ── 요약 테이블 ──────────────────────────────────────────────────
+    # ── 지표 행 (설명 → 차트 → 증가/감소) ────────────────────────────
 
-    def _build_summary_table(self, results: list[IndicatorResult]) -> str:
-        if not results:
+    def _build_indicator_rows(self, cat: int) -> str:
+        slots = self._figures.get(cat)
+        if not slots:
             return "<p style='color:var(--muted)'>데이터 없음</p>"
 
-        rows = "\n".join(self._table_row(r) for r in results)
-        return f"""
-<table class="summary-table">
-  <thead>
-    <tr>
-      <th>지표명</th>
-      <th>현재값</th>
-      <th>1주</th>
-      <th>1개월</th>
-      <th>1년</th>
-      <th>5년 위치</th>
-      <th>상황 요약</th>
-    </tr>
-  </thead>
-  <tbody>
-    {rows}
-  </tbody>
-</table>"""
+        rows = []
+        for i, (fig, slot_results) in enumerate(slots):
+            include_js = "cdn" if (cat == 1 and i == 0) else False
+            chart_div = pio.to_html(
+                fig, full_html=False, include_plotlyjs=include_js,
+                config={"displayModeBar": True},
+            )
+            primary = self._resolve_row_meta(slot_results)
+            rows.append(f"""
+<div class="indicator-row">
+  {self._build_row_desc(primary)}
+  <div class="row-chart"><div class="chart-wrap">{chart_div}</div></div>
+  {self._build_row_updown(primary)}
+</div>""")
+        return f'<div class="indicator-rows">{"".join(rows)}</div>'
 
-    def _table_row(self, r: IndicatorResult) -> str:
-        import math
+    @staticmethod
+    def _resolve_row_meta(slot_results: list[IndicatorResult]) -> IndicatorResult:
+        """
+        여러 지표를 겹쳐 그린 슬롯의 설명 카드는 기본적으로 첫 번째 지표
+        설명을 쓰지만, 넷 유동성 구성요소(BS·RRP·TGA)처럼 조합 자체가
+        의미 있는 경우엔 조합에 맞는 설명으로 바꿔 보여줍니다.
+        """
+        keys = {r.key for r in slot_results}
+        if keys == {"BS", "RRP", "TGA"}:
+            bs = next(r for r in slot_results if r.key == "BS")
+            return replace(
+                bs,
+                name_ko="Fed 대차대조표 & 역레포 잔고 & TGA 잔고",
+                name_en="Balance Sheet & RRP & TGA",
+                description=(
+                    "넷 유동성(BS−RRP−TGA)을 이루는 세 구성요소를 한 차트에 겹쳐서, "
+                    "어느 쪽의 움직임이 넷 유동성 증감을 주도하고 있는지 한눈에 비교합니다. "
+                    "Fed 대차대조표(파랑)는 연준이 직접 조절하는 유동성 총량, 역레포(RRP)는 시중에서 "
+                    "빠져나가 연준에 잠긴 자금, TGA는 재무부 계좌에 묶인 자금입니다."
+                ),
+                when_up=(
+                    "대차대조표는 늘고 RRP·TGA는 줄어드는 조합일 때 넷 유동성이 가장 크게 증가합니다. "
+                    "즉 연준이 돈을 풀면서(QE) 동시에 시중에 잠겨있던 RRP·TGA 자금까지 풀려나오는 구간입니다."
+                ),
+                when_down=(
+                    "대차대조표는 줄고(QT) RRP·TGA는 늘어나는 조합일 때 넷 유동성이 가장 크게 감소합니다. "
+                    "특히 부채한도 협상 타결 직후 TGA가 급격히 채워지는 구간에서 이런 패턴이 잘 나타납니다."
+                ),
+            )
+        return slot_results[0]
 
-        def fmt_chg(val, unit):
-            if val is None or math.isnan(val):
-                return '<span class="chg-neu">—</span>'
-            sign = "+" if val >= 0 else ""
-            cls  = "chg-pos" if val >= 0 else "chg-neg"
-            if unit == "$B":
-                s = f"{sign}${val:,.0f}B"
-            elif unit in ("%", "bps"):
-                s = f"{sign}{val:.2f}{unit}"
-            else:
-                s = f"{sign}{val:.2f}"
-            return f'<span class="{cls}">{s}</span>'
-
+    @staticmethod
+    def _build_row_desc(r: IndicatorResult) -> str:
         latest_str = (
             f"${r.latest_value:,.1f}B" if r.unit == "$B"
-            else f"{r.latest_value:.2f} {r.unit}".strip()
+            else f"{r.latest_value:,.2f} {r.unit}".strip()
         )
 
-        pct_bar = ""
-        if r.pct_rank is not None:
-            pct_bar = (
-                f'<span class="pct-bar">'
-                f'<span class="pct-fill" style="width:{r.pct_rank:.0f}%"></span>'
-                f'</span>{r.pct_rank:.0f}%'
+        chg_badge = ""
+        if r.chg_disp is not None and not math.isnan(r.chg_disp):
+            sign = "+" if r.chg_disp >= 0 else ""
+            suffix = "%" if r.chg_disp_is_pct else (f" {r.unit}" if r.unit else "")
+            cls = "up" if r.chg_disp >= 0 else "down"
+            chg_badge = (
+                f'<span class="row-chg {cls}">{r.chg_disp_label} {sign}{r.chg_disp:.2f}{suffix}</span>'
             )
 
         return f"""
-<tr>
-  <td>
-    <div style="font-weight:600">{r.name_ko}</div>
-    <div style="font-size:10px;color:var(--muted)">{r.name_en}</div>
-  </td>
-  <td class="val-cell">{latest_str}<br>
-    <span style="font-size:10px;color:var(--muted)">{r.latest_date}</span></td>
-  <td>{fmt_chg(r.chg_1w, r.unit)}</td>
-  <td>{fmt_chg(r.chg_1m, r.unit)}</td>
-  <td>{fmt_chg(r.chg_1y, r.unit)}</td>
-  <td>{pct_bar}</td>
-  <td class="ctx-cell" title="{r.context}">{r.context[:80]}{'…' if len(r.context) > 80 else ''}</td>
-</tr>"""
+<div class="row-desc">
+  <div class="row-head">
+    <span class="row-name">{r.name_ko}</span>
+    <span class="row-en">{r.name_en}</span>
+  </div>
+  <div class="row-head">
+    <span class="row-val">{latest_str}</span>
+    <span class="row-date">{r.latest_date}</span>
+    {chg_badge}
+  </div>
+  <div class="row-text">{r.description}</div>
+</div>"""
 
-    # ── 차트 HTML ────────────────────────────────────────────────────
-
-    def _build_chart_html(self, cat: int) -> str:
-        fig = self._figures.get(cat)
-        if fig is None:
-            return ""
-
-        chart_div = pio.to_html(
-            fig,
-            full_html=False,
-            include_plotlyjs="cdn",
-            config={"responsive": True, "displayModeBar": True},
+    @staticmethod
+    def _build_row_updown(r: IndicatorResult) -> str:
+        up_row = (
+            f'<div class="detail-row up"><b>↑ 증가할 때</b>{r.when_up}</div>'
+            if r.when_up else ""
         )
-        return f'<div class="chart-wrap">{chart_div}</div>'
+        down_row = (
+            f'<div class="detail-row down"><b>↓ 감소할 때</b>{r.when_down}</div>'
+            if r.when_down else ""
+        )
+        return f'<div class="row-updown">{up_row}{down_row}</div>'
