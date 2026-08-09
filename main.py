@@ -94,7 +94,7 @@ class MacroDashboard:
         # ── [6] 텔레그램 전송 ─────────────────────────────────────────
         print("\n[6/6]  텔레그램 전송")
         TelegramSender(cfg.TELEGRAM_TOKEN, cfg.TELEGRAM_CHAT_ID).send_report(
-            results, cfg.OUTPUT_HTML
+            results, cfg.OUTPUT_HTML, cfg.CATEGORY_META, title="미국 달러 유동성 대시보드"
         )
 
         print("\n  🎉  모든 작업 완료!\n")

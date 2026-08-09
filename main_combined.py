@@ -50,6 +50,7 @@ from indicators.global_dollar    import GlobalDollarGroup
 from indicators.base             import IndicatorResult, GenericIndicatorGroup
 from dashboard.chart_builder     import ChartBuilder
 from dashboard.html_exporter     import HtmlExporter
+from notify.telegram_sender      import TelegramSender
 from main import MacroDashboard as _YahooFetcher   # Yahoo 벤치마크 fetch 재사용
 
 OUTPUT_HTML  = "combined_dashboard.html"
@@ -137,6 +138,11 @@ class CombinedDashboard:
                 ("투자", [cat + INV_OFFSET for cat in inv_cfg.CATEGORY_META.keys()]),
             ],
         ).export(OUTPUT_HTML)
+
+        TelegramSender(liq_cfg.TELEGRAM_TOKEN, liq_cfg.TELEGRAM_CHAT_ID).send_report(
+            all_results, OUTPUT_HTML, category_meta,
+            title="미국 경기·유동성·물가·투자 통합 대시보드",
+        )
 
         print("\n  🎉  모든 작업 완료!\n")
 
@@ -378,6 +384,8 @@ class CombinedDashboard:
     def _validate_env() -> None:
         print(f"\n  환경변수:")
         print(f"    FRED_API_KEY     : {'✅' if liq_cfg.FRED_API_KEY     else '❌ 없음 → 종료'}")
+        print(f"    TELEGRAM_TOKEN   : {'✅' if liq_cfg.TELEGRAM_TOKEN   else '⚠️  없음 (전송 건너뜀)'}")
+        print(f"    TELEGRAM_CHAT_ID : {'✅' if liq_cfg.TELEGRAM_CHAT_ID else '⚠️  없음 (전송 건너뜀)'}")
 
         if not liq_cfg.FRED_API_KEY:
             print("\n❌  FRED_API_KEY 미설정. https://fred.stlouisfed.org 에서 무료 발급.")

@@ -13,7 +13,6 @@ from datetime import datetime
 
 import requests
 
-from config import CATEGORY_META
 from indicators.base import IndicatorResult
 
 
@@ -32,8 +31,10 @@ class TelegramSender:
 
     def send_report(
         self,
-        results:   list[IndicatorResult],
-        html_path: str,
+        results:       list[IndicatorResult],
+        html_path:     str,
+        category_meta: dict,
+        title:         str = "매크로 유동성 대시보드",
     ) -> None:
         """요약 메시지 전송 → HTML 파일 첨부."""
         if not self._ok:
@@ -43,14 +44,14 @@ class TelegramSender:
         print("  → 텔레그램 전송 시작...")
 
         # ① 헤더 + 카테고리별 요약
-        messages = self._build_messages(results)
+        messages = self._build_messages(results, category_meta, title)
         for i, msg in enumerate(messages, 1):
             if self._send_text(msg):
                 print(f"  ✅  메시지 {i}/{len(messages)} 전송 완료")
 
         # ② HTML 파일 첨부
         caption = (
-            f"📊 <b>매크로 유동성 대시보드</b>\n"
+            f"📊 <b>{title}</b>\n"
             f"{datetime.now().strftime('%Y-%m-%d')}\n"
             f"브라우저에서 열면 인터랙티브 차트를 확인할 수 있습니다."
         )
@@ -59,7 +60,9 @@ class TelegramSender:
 
     # ── 메시지 빌더 ──────────────────────────────────────────────────
 
-    def _build_messages(self, results: list[IndicatorResult]) -> list[str]:
+    def _build_messages(
+        self, results: list[IndicatorResult], category_meta: dict, title: str
+    ) -> list[str]:
         """
         카테고리별로 지표 현황을 정리한 메시지 목록 반환.
         4096자 초과 시 자동 분할.
@@ -67,14 +70,14 @@ class TelegramSender:
         result_map = {r.key: r for r in results}
 
         header = (
-            f"🏦 <b>매크로 유동성 모니터</b>\n"
+            f"🏦 <b>{title}</b>\n"
             f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M KST')}\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
         )
 
         blocks: list[str] = []
 
-        for cat, (name, desc, indicators) in CATEGORY_META.items():
+        for cat, (name, desc, indicators) in category_meta.items():
             block = f"\n<b>{name}</b>\n"
             for meta in indicators:
                 r = result_map.get(meta.key)
