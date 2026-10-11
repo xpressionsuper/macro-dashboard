@@ -35,7 +35,8 @@ class IndicatorResult:
 
     # ── 현재값 ────────────────────────────────────────────────────────
     latest_value: float
-    latest_date:  str
+    latest_date:  str    # 이 값이 어느 기간(월/일)을 나타내는지 — "기준일"
+    released_date: str = ""   # 실제로 FRED에 이 값이 반영(발표)된 날짜 — "발표일"
 
     # ── 변화량 ────────────────────────────────────────────────────────
     when_up:   str = ""                # 이 지표가 "증가"할 때 벌어지는 일과 의미
@@ -73,12 +74,14 @@ class BaseIndicatorGroup(abc.ABC):
     category_num:  int = 0
     category_name: str = ""
 
-    def __init__(self, raw: dict[str, pd.Series]):
+    def __init__(self, raw: dict[str, pd.Series], released: Optional[dict[str, str]] = None):
         """
         Args:
-            raw: {key: Series} 딕셔너리 (FRED 원시 + 파생 지표 포함).
+            raw:      {key: Series} 딕셔너리 (FRED 원시 + 파생 지표 포함).
+            released: {key: 발표일 문자열} 딕셔너리. 없으면 latest_date로 대체됩니다.
         """
         self.raw = raw
+        self.released = released or {}
 
     # ── 추상 메서드 ──────────────────────────────────────────────────
 
@@ -107,6 +110,7 @@ class BaseIndicatorGroup(abc.ABC):
                 description=meta.description, direction=meta.direction,
                 source=meta.source, category=meta.category, unit=meta.unit,
                 latest_value=float("nan"), latest_date="N/A",
+                released_date=self.released.get(meta.key, ""),
                 when_up=meta.when_up, when_down=meta.when_down,
                 context="데이터 수집 실패",
             )
@@ -131,11 +135,14 @@ class BaseIndicatorGroup(abc.ABC):
         label = "전년대비" if meta.compare_yoy else "전월대비"
         chg_disp = self._pct_change(s, days) if is_pct else self._change(s, days)
 
+        released_date = self.released.get(meta.key) or latest_date
+
         return IndicatorResult(
             key=meta.key, name_ko=meta.name_ko, name_en=meta.name_en,
             description=meta.description, direction=meta.direction,
             source=meta.source, category=meta.category, unit=meta.unit,
             latest_value=latest_value, latest_date=latest_date,
+            released_date=released_date,
             when_up=meta.when_up, when_down=meta.when_down,
             chg_1w=chg_1w, chg_1m=chg_1m, chg_3m=chg_3m, chg_1y=chg_1y,
             pct_rank=pct_rank, trend_label=trend_label, context=context,
@@ -250,8 +257,11 @@ class BaseIndicatorGroup(abc.ABC):
 class GenericIndicatorGroup(BaseIndicatorGroup):
     """IndicatorMeta 리스트 하나를 그대로 진단하는 범용 그룹."""
 
-    def __init__(self, raw: dict[str, pd.Series], indicators: list, category_num: int, category_name: str):
-        super().__init__(raw)
+    def __init__(
+        self, raw: dict[str, pd.Series], indicators: list, category_num: int, category_name: str,
+        released: Optional[dict[str, str]] = None,
+    ):
+        super().__init__(raw, released)
         self._indicators   = indicators
         self.category_num  = category_num
         self.category_name = category_name

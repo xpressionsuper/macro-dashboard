@@ -48,6 +48,7 @@ from indicators.net_liquidity    import NetLiquidityGroup
 from indicators.financial_market import FinancialMarketGroup
 from indicators.global_dollar    import GlobalDollarGroup
 from indicators.base             import IndicatorResult, GenericIndicatorGroup
+from indicators                  import capitulation
 from dashboard.chart_builder     import ChartBuilder
 from dashboard.html_exporter     import HtmlExporter
 from notify.telegram_sender      import TelegramSender
@@ -92,9 +93,13 @@ class CombinedDashboard:
         self._apply_yoy_transform(inf_raw)
 
         print("\n[6/8]  지표 진단")
-        liq_results = self._run_liquidity_diagnosis(liq_raw)
-        rec_results = self._run_recession_diagnosis(rec_raw)
-        inf_results = self._run_generic_diagnosis(inf_raw, inf_cfg.CATEGORY_META)
+        liq_released = FredClient(liq_cfg.FRED_API_KEY).fetch_batch_release_dates(liq_cfg.ALL_INDICATORS)
+        rec_released = FredClient(rec_cfg.FRED_API_KEY).fetch_batch_release_dates(rec_cfg.ALL_INDICATORS)
+        inf_released = FredClient(liq_cfg.FRED_API_KEY).fetch_batch_release_dates(inf_cfg.ALL_INDICATORS)
+
+        liq_results = self._run_liquidity_diagnosis(liq_raw, liq_released)
+        rec_results = self._run_recession_diagnosis(rec_raw, rec_released)
+        inf_results = self._run_generic_diagnosis(inf_raw, inf_cfg.CATEGORY_META, inf_released)
         inv_results = self._run_generic_diagnosis(inv_raw, inv_cfg.CATEGORY_META)
         for r in rec_results:
             r.category += REC_OFFSET
@@ -137,6 +142,8 @@ class CombinedDashboard:
                 ("물가", [cat + INF_OFFSET for cat in inf_cfg.CATEGORY_META.keys()]),
                 ("투자", [cat + INV_OFFSET for cat in inv_cfg.CATEGORY_META.keys()]),
             ],
+            top_panel=capitulation.render_panel(merged_raw),
+            top_nav=("🏳️ 연준 항복 판정", "fed-capitulation"),
         ).export(OUTPUT_HTML)
 
         TelegramSender(liq_cfg.TELEGRAM_TOKEN, liq_cfg.TELEGRAM_CHAT_ID).send_report(
@@ -161,10 +168,11 @@ class CombinedDashboard:
         raw["GOLD"] = _YahooFetcher._fetch_yahoo_series("GC=F", label="금 선물 (오버레이)")
         return raw
 
-    def _run_liquidity_diagnosis(self, raw: dict) -> list[IndicatorResult]:
+    def _run_liquidity_diagnosis(self, raw: dict, released: dict) -> list[IndicatorResult]:
         groups = [
-            FedSupplyGroup(raw), TreasuryChannelGroup(raw), NetLiquidityGroup(raw),
-            FinancialMarketGroup(raw), GlobalDollarGroup(raw),
+            FedSupplyGroup(raw, released), TreasuryChannelGroup(raw, released),
+            NetLiquidityGroup(raw, released),
+            FinancialMarketGroup(raw, released), GlobalDollarGroup(raw, released),
         ]
         results = []
         for group in groups:
@@ -179,8 +187,8 @@ class CombinedDashboard:
         fred_client = FredClient(rec_cfg.FRED_API_KEY)
         return fred_client.fetch_batch(rec_cfg.ALL_INDICATORS)
 
-    def _run_recession_diagnosis(self, raw: dict) -> list[IndicatorResult]:
-        return self._run_generic_diagnosis(raw, rec_cfg.CATEGORY_META)
+    def _run_recession_diagnosis(self, raw: dict, released: dict) -> list[IndicatorResult]:
+        return self._run_generic_diagnosis(raw, rec_cfg.CATEGORY_META, released)
 
     # ── 물가 파이프라인 ──────────────────────────────────────────────
 
@@ -369,10 +377,10 @@ class CombinedDashboard:
     # ── 공용: 카테고리 메타 기반 범용 진단 ────────────────────────────
 
     @staticmethod
-    def _run_generic_diagnosis(raw: dict, category_meta: dict) -> list[IndicatorResult]:
+    def _run_generic_diagnosis(raw: dict, category_meta: dict, released: dict = None) -> list[IndicatorResult]:
         results = []
         for cat, (name, _desc, indicators) in category_meta.items():
-            group = GenericIndicatorGroup(raw, indicators, cat, name)
+            group = GenericIndicatorGroup(raw, indicators, cat, name, released=released)
             cat_results = group.diagnose()
             results.extend(cat_results)
             print(f"  ✅  {name}  ({len(cat_results)}개)")
@@ -384,8 +392,6 @@ class CombinedDashboard:
     def _validate_env() -> None:
         print(f"\n  환경변수:")
         print(f"    FRED_API_KEY     : {'✅' if liq_cfg.FRED_API_KEY     else '❌ 없음 → 종료'}")
-        print(f"    TELEGRAM_TOKEN   : {'✅' if liq_cfg.TELEGRAM_TOKEN   else '⚠️  없음 (전송 건너뜀)'}")
-        print(f"    TELEGRAM_CHAT_ID : {'✅' if liq_cfg.TELEGRAM_CHAT_ID else '⚠️  없음 (전송 건너뜀)'}")
 
         if not liq_cfg.FRED_API_KEY:
             print("\n❌  FRED_API_KEY 미설정. https://fred.stlouisfed.org 에서 무료 발급.")

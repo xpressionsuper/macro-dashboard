@@ -34,13 +34,22 @@ FONT_FAMILY  = "Inter, 'Nanum Gothic', sans-serif"
 # ── 같은 차트에 겹칠 지표 그룹 정의 ──────────────────────────────────────
 # key: 대표 지표(y축 왼쪽), values: 같이 그릴 지표들
 COMBINED_CHARTS: dict[str, list[str]] = {
-    "BS":      ["UST", "MBS"],   # ① BS 차트에 UST, MBS 함께
-    "SOFR":    ["IORB"],          # ④ SOFR 차트에 IORB 함께
-    "DGS10":   ["DGS2"],          # ④ 10Y + 2Y 함께
-    "NET_LIQ": [],                # ③ 별도 처리
+    "BS":       ["UST", "MBS"],   # ① BS 차트에 UST, MBS 함께
+    "FEDFUNDS": ["DGS3MO"],       # ④ 기준금리 + 3개월물 국채 수익률 함께
+    "SOFR":     ["IORB"],          # ④ SOFR 차트에 IORB 함께
+    "DGS10":    ["DGS2"],          # ④ 10Y + 2Y 함께
+    "NET_LIQ":  [],                # ③ 별도 처리
 }
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
-SKIP_SOLO: set[str] = {"UST", "MBS", "IORB", "DGS2"}
+SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"}
+
+# y축 눈금 상한 고정 (0 ~ 지정값) — 없는 지표는 자동 스케일 유지
+Y_MAX_OVERRIDE: dict[str, float] = {
+    "UNRATE":  5,      # 실업률 (%)
+    "SAHM":    2,       # Sahm Rule 경기침체 지표
+    "ICSA_R":  1000,    # 신규 실업수당 청구건수 (천 건)
+    "CCSA":    5000,    # 지속 실업수당 청구건수 (천 명)
+}
 
 
 class ChartBuilder:
@@ -159,11 +168,13 @@ class ChartBuilder:
 
         # y축 단위 라벨 (슬롯의 첫 번째 지표 기준)
         if slot:
+            y_max = Y_MAX_OVERRIDE.get(slot[0].key)
             fig.update_yaxes(
                 title_text=slot[0].unit,
-                row=row, col=1,
+                row=row, col=1, secondary_y=False,
                 title_font=dict(size=10),
                 gridcolor=GRID_COLOR,
+                range=[0, y_max] if y_max is not None else None,
             )
             fig.update_xaxes(
                 row=row, col=1,

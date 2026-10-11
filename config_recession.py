@@ -167,7 +167,7 @@ COMPOSITE_LEADING: list[IndicatorMeta] = [
         key="GDP", name_ko="실질 GDP 성장률", name_en="Real GDP",
         description="물가 영향을 제거한 미국 전체 경제 생산 규모로, 다른 모든 지표가 결국 예측하려는 '최종 스코어보드'입니다. NBER의 공식 침체 판정도 이 지표(및 관련 월간지표들)를 기반으로 이루어집니다. 분기 발표라 다른 월간·주간 지표보다 훨씬 늦게 나오는 대표적 후행지표입니다.",
         direction="↓침체 확정 신호", source="FRED: GDPC1", category=4,
-        fred_id="GDPC1", unit="$B", divisor=1_000, compare_yoy=True,
+        fred_id="GDPC1", unit="$B", compare_yoy=True,
         when_up="소비·투자·정부지출·순수출이 전반적으로 늘어날 때 증가합니다. 2개 분기 연속 감소(마이너스 성장)가 흔히 통용되는 '기술적 침체'의 기준선입니다.",
         when_down="여러 부문에서 동시에 위축이 나타날 때 감소합니다. 다른 지표들이 이미 몇 달 전부터 경고했던 내용을 뒤늦게 통계로 확인시켜주는 역할을 합니다.",
     ),

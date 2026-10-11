@@ -7,6 +7,7 @@ data/fred_client.py ─ FRED API 클라이언트
 import time
 import warnings
 from datetime import datetime, timedelta
+from typing import Optional
 
 import pandas as pd
 from fredapi import Fred
@@ -92,4 +93,34 @@ class FredClient:
                 label=meta.name_ko,
             )
 
+        return result
+
+    # ── 실제 발표(갱신)일 조회 ───────────────────────────────────────
+
+    def fetch_release_date(self, fred_id: str) -> Optional[str]:
+        """
+        해당 시리즈가 FRED에 실제로 마지막 반영된 날짜(발표일)를 가져옵니다.
+        latest_date(관측 대상 기간)와 달리, 실제 데이터가 갱신된 시점입니다.
+        """
+        try:
+            info = self._fred.get_series_info(fred_id)
+            last_updated = info.get("last_updated")
+            if not last_updated:
+                return None
+            time.sleep(REQUEST_DELAY)
+            return str(last_updated).split(" ")[0]
+        except Exception:
+            return None
+
+    def fetch_batch_release_dates(
+        self, indicators: list[IndicatorMeta]
+    ) -> dict[str, str]:
+        """여러 지표의 발표일을 {key: 날짜} 딕셔너리로 반환합니다."""
+        result: dict[str, str] = {}
+        for meta in indicators:
+            if not meta.available or not meta.fred_id:
+                continue
+            date = self.fetch_release_date(meta.fred_id)
+            if date:
+                result[meta.key] = date
         return result

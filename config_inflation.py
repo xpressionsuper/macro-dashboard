@@ -12,7 +12,7 @@ from config import IndicatorMeta
 OUTPUT_HTML   = "inflation_dashboard.html"
 
 # 수집 직후 YoY(%) 로 변환해야 하는 지표 키 (레벨 지수 → 전년동월비 %)
-YOY_TRANSFORM_KEYS: set[str] = {"CPI_ALL", "CPI_CORE", "STICKY", "SHELTER", "PCE_ALL", "PCE_CORE", "PPI", "WAGE"}
+YOY_TRANSFORM_KEYS: set[str] = {"CPI_ALL", "CPI_CORE", "SHELTER", "PCE_ALL", "PCE_CORE", "PPI", "WAGE"}
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -40,7 +40,7 @@ CPI_GROUP: list[IndicatorMeta] = [
     IndicatorMeta(
         key="STICKY", name_ko="끈적한 물가지수 (Sticky CPI, YoY)", name_en="Sticky Price CPI YoY",
         description="애틀랜타 연은이 만든 지표로, 임대료·의료비·교육비처럼 한번 오르면 잘 내려가지 않는(가격 변경 주기가 긴) 품목들만 따로 모아 계산한 근원물가입니다. 코어CPI보다도 더 '끈적한' 기조적 인플레이션을 보여줍니다.",
-        direction="↑장기화 위험", source="FRED: CORESTICKM159SFRBATL (YoY 변환)", category=1,
+        direction="↑장기화 위험", source="FRED: CORESTICKM159SFRBATL (원 시리즈가 YoY %)", category=1,
         fred_id="CORESTICKM159SFRBATL", unit="%",
         when_up="가격을 자주 바꾸지 않는 서비스업종(임대, 의료, 보험 등)에서 인상이 광범위하게 퍼질 때 상승합니다. 이 지표가 높으면 물가가 쉽게 꺾이지 않을 가능성이 크다는 뜻입니다.",
         when_down="경직적 항목들의 가격 인상 압력까지 누그러질 때 하락하며, 이는 인플레이션이 '일시적'이 아니라 '진짜로' 잡히고 있다는 신뢰도 높은 신호입니다.",

@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import plotly.graph_objects as go
@@ -103,6 +103,13 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
 .indicator-row { display: flex; align-items: stretch; gap: 14px; flex-wrap: wrap;
                  background: var(--surface); border: 1px solid var(--border);
                  border-radius: 8px; padding: 12px 16px; }
+.indicator-row.newest { border-color: var(--accent);
+                         box-shadow: 0 0 0 1px var(--accent), 0 0 16px rgba(0,212,255,.25); }
+.newest-badge { display: inline-block; font-size: 10px; font-weight: 700;
+                color: var(--bg); background: var(--accent);
+                padding: 1px 6px; border-radius: 999px; margin-left: 4px;
+                vertical-align: middle; }
+.row-date.newest { color: var(--accent); font-weight: 600; }
 .row-desc  { flex: 1 1 240px; min-width: 200px; }
 .row-head  { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
              margin-bottom: 6px; }
@@ -169,6 +176,8 @@ class HtmlExporter:
         sidebar_title: str = "📊 매크로 모니터",
         data_sources: str = "FRED · TreasuryDirect · NY Fed",
         sidebar_groups: Optional[list[tuple[str, list[int]]]] = None,
+        top_panel:    str = "",          # 헤더 바로 아래, 모든 카테고리 위에 넣을 HTML (id 필요)
+        top_nav:      Optional[tuple[str, str]] = None,  # (사이드바 표시명, 패널 id)
     ):
         self._figures       = figures
         self._results       = {r.key: r for r in results}
@@ -178,6 +187,12 @@ class HtmlExporter:
         self._sidebar_title = sidebar_title
         self._data_sources  = data_sources
         self._sidebar_groups = sidebar_groups   # [(그룹명, [카테고리 번호...]), ...]
+        self._top_panel     = top_panel
+        self._top_nav       = top_nav
+
+        # "최신" 배지는 딱 하나의 최고값이 아니라, 오늘로부터 1주일 이내에
+        # 발표된 지표는 전부 하이라이트합니다. (기준일이 아니라 발표일 기준)
+        self._newest_cutoff = datetime.now() - timedelta(days=7)
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -222,6 +237,9 @@ class HtmlExporter:
                 f'<div class="nav-item" data-target="cat-{cat}">{name}</div>'
                 for cat, (name, _, _) in self._category_meta.items()
             )
+        if self._top_nav:
+            label, target = self._top_nav
+            items = f'<div class="nav-item" data-target="{target}">{label}</div>' + items
         return f"""
 <aside class="sidebar">
   <div class="sidebar-title">{self._sidebar_title}</div>
@@ -250,7 +268,7 @@ class HtmlExporter:
             for cat in sorted(self._category_meta.keys())
         )
 
-        return header + sections
+        return header + self._top_panel + sections
 
     # ── 카테고리 섹션 ─────────────────────────────────────────────────
 
@@ -283,13 +301,25 @@ class HtmlExporter:
                 config={"displayModeBar": True},
             )
             primary = self._resolve_row_meta(slot_results)
+            is_newest = self._is_within_a_week(primary.released_date)
+            row_cls = "indicator-row newest" if is_newest else "indicator-row"
             rows.append(f"""
-<div class="indicator-row">
-  {self._build_row_desc(primary)}
+<div class="{row_cls}">
+  {self._build_row_desc(primary, is_newest=is_newest)}
   <div class="row-chart"><div class="chart-wrap">{chart_div}</div></div>
   {self._build_row_updown(primary)}
 </div>""")
         return f'<div class="indicator-rows">{"".join(rows)}</div>'
+
+    def _is_within_a_week(self, released_date: str) -> bool:
+        """발표일이 오늘로부터 1주일 이내인지 확인합니다."""
+        if not released_date or released_date == "N/A":
+            return False
+        try:
+            d = datetime.strptime(released_date, "%Y-%m-%d")
+        except ValueError:
+            return False
+        return d >= self._newest_cutoff
 
     @staticmethod
     def _resolve_row_meta(slot_results: list[IndicatorResult]) -> IndicatorResult:
@@ -323,7 +353,7 @@ class HtmlExporter:
         return slot_results[0]
 
     @staticmethod
-    def _build_row_desc(r: IndicatorResult) -> str:
+    def _build_row_desc(r: IndicatorResult, is_newest: bool = False) -> str:
         latest_str = (
             f"${r.latest_value:,.1f}B" if r.unit == "$B"
             else f"{r.latest_value:,.2f} {r.unit}".strip()
@@ -338,6 +368,15 @@ class HtmlExporter:
                 f'<span class="row-chg {cls}">{r.chg_disp_label} {sign}{r.chg_disp:.2f}{suffix}</span>'
             )
 
+        date_cls = "row-date newest" if is_newest else "row-date"
+        newest_badge = ' <span class="newest-badge">최신</span>' if is_newest else ""
+        if r.released_date and r.released_date != r.latest_date:
+            released_str = f'<span class="{date_cls}">발표일: {r.released_date}{newest_badge}</span>'
+        elif is_newest:
+            released_str = f'<span class="{date_cls}">{newest_badge}</span>'
+        else:
+            released_str = ""
+
         return f"""
 <div class="row-desc">
   <div class="row-head">
@@ -346,7 +385,8 @@ class HtmlExporter:
   </div>
   <div class="row-head">
     <span class="row-val">{latest_str}</span>
-    <span class="row-date">{r.latest_date}</span>
+    <span class="row-date">기준일: {r.latest_date}</span>
+    {released_str}
     {chg_badge}
   </div>
   <div class="row-text">{r.description}</div>
