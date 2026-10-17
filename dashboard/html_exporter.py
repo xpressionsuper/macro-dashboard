@@ -122,8 +122,23 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
 .row-chg.up   { color: var(--up);   background: rgba(63,185,80,.12); }
 .row-chg.down { color: var(--down); background: rgba(248,81,73,.12); }
 .row-text  { font-size: 15px; color: var(--text); line-height: 1.55; }
-.row-chart { flex: 0 0 auto; }
-.row-chart .chart-wrap { background: transparent; border: none; padding: 0; overflow-x: auto; }
+.row-chart { flex: 0 1 580px; min-width: 0; }
+.row-chart .chart-wrap { background: transparent; border: none; padding: 0; }
+
+/* ── 모바일: 사이드바를 상단 가로 메뉴로, 여백 축소 ── */
+@media (max-width: 760px) {
+  .layout { display: block; }
+  .sidebar { position: sticky; top: 0; z-index: 10; width: auto; min-width: 0; height: auto;
+             padding: 0; display: flex; overflow-x: auto; white-space: nowrap;
+             border-right: none; border-bottom: 1px solid var(--border); }
+  .sidebar-title, .nav-group { display: none; }
+  .nav-item { padding: 10px 12px; border-left: none; border-bottom: 3px solid transparent; }
+  .nav-item.active { border-bottom-color: var(--accent); }
+  .main { padding: 12px; }
+  .indicator-row { padding: 10px; }
+  .row-desc, .row-updown { min-width: 0; }
+  .category-section { scroll-margin-top: 50px; }
+}
 .row-updown { flex: 1 1 240px; min-width: 220px; display: flex; flex-direction: column; gap: 8px; }
 .detail-row { font-size: 16px; font-weight: 600; line-height: 1.5;
               padding: 10px 12px; border-radius: 6px; }
@@ -298,7 +313,7 @@ class HtmlExporter:
             include_js = "cdn" if (cat == 1 and i == 0) else False
             chart_div = pio.to_html(
                 fig, full_html=False, include_plotlyjs=include_js,
-                config={"displayModeBar": True},
+                config={"displayModeBar": False, "responsive": True, "scrollZoom": False},
             )
             primary = self._resolve_row_meta(slot_results)
             is_newest = self._is_within_a_week(primary.released_date)

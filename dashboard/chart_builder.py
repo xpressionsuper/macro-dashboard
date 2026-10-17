@@ -126,7 +126,7 @@ class ChartBuilder:
             self._add_slot_traces(fig, slot, 1)
             self._add_benchmark_overlays(fig, 1)
             title = " & ".join(r.name_ko for r in slot)
-            self._apply_layout(fig, width=580, height=330, title=title)
+            self._apply_layout(fig, height=330, title=title)
             figures.append((fig, slot))
 
         return figures
@@ -272,9 +272,12 @@ class ChartBuilder:
     # ── 레이아웃 공통 설정 ────────────────────────────────────────────
 
     @staticmethod
-    def _apply_layout(fig: go.Figure, width: int, height: int, title: str = "") -> None:
+    def _apply_layout(fig: go.Figure, height: int, title: str = "") -> None:
+        # 가로폭은 컨테이너에 맞춤(모바일), 터치 드래그로 확대·이동 금지 → 페이지 스크롤 우선
+        fig.update_xaxes(fixedrange=True)
+        fig.update_yaxes(fixedrange=True)
         fig.update_layout(
-            width=width,
+            dragmode=False,
             height=height,
             template=THEME,
             title=dict(text=title, font=dict(size=14), x=0.05, y=0.97),
