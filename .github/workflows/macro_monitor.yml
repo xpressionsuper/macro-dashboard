@@ -2,13 +2,25 @@ name: 매크로 유동성 모니터 v3
 
 on:
   schedule:
-    - cron: '0 22 * * 4'   # 매주 금요일 오전 7시 KST (UTC 목 22:00)
+    - cron: '0 22 * * *'   # 매일 오전 7시 KST (UTC 22:00)
   workflow_dispatch:         # 수동 실행 버튼
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   run-monitor:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
 
     steps:
       - name: 코드 체크아웃
@@ -24,15 +36,19 @@ jobs:
 
       - name: 모니터 실행
         env:
+          TZ: Asia/Seoul
           FRED_API_KEY:     ${{ secrets.FRED_API_KEY }}
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python main_combined.py
 
-      - name: HTML 대시보드 아티팩트 업로드
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Pages용 파일 준비
+        run: mkdir site && cp combined_dashboard.html site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
         with:
-          name: macro-dashboard-${{ github.run_number }}
-          path: combined_dashboard.html
-          retention-days: 30
+          path: site
+
+      - name: GitHub Pages 배포
+        id: deploy
+        uses: actions/deploy-pages@v4
