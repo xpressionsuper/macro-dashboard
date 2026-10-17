@@ -203,7 +203,8 @@ class CombinedDashboard:
             series = raw.get(key)
             if series is None or series.empty or len(series) < 13:
                 continue
-            raw[key] = series.pct_change(12).mul(100).dropna().rename(key)
+            # 줄 수가 아닌 날짜 기준 12개월 — 결측월(2025-10 셧다운)이 있으면 줄 기준은 13개월 비교가 됨
+            raw[key] = series.pct_change(freq=pd.DateOffset(months=12), fill_method=None).mul(100).dropna().rename(key)
 
     # ── 투자(밸류에이션·심리) 파이프라인 ─────────────────────────────
 

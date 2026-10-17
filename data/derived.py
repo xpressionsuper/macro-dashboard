@@ -90,5 +90,5 @@ class DerivedCalculator:
         if m2.empty or len(m2) < 13:
             return pd.Series(dtype=float, name="M2_YOY")
 
-        yoy = m2.pct_change(12).mul(100).dropna().rename("M2_YOY")
+        yoy = m2.pct_change(freq=pd.DateOffset(months=12), fill_method=None).mul(100).dropna().rename("M2_YOY")
         return yoy
