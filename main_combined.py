@@ -46,7 +46,6 @@ from indicators.fed_supply       import FedSupplyGroup
 from indicators.treasury_channel import TreasuryChannelGroup
 from indicators.net_liquidity    import NetLiquidityGroup
 from indicators.financial_market import FinancialMarketGroup
-from indicators.global_dollar    import GlobalDollarGroup
 from indicators.base             import IndicatorResult, GenericIndicatorGroup
 from indicators                  import capitulation
 from dashboard.chart_builder     import ChartBuilder
@@ -169,6 +168,9 @@ class CombinedDashboard:
             raw["TGA"] = tga
 
         raw["SPX"]  = fred_client.fetch_series("SP500", label="S&P500 (오버레이)")
+        # 화면 지표에선 뺐지만 연준 항복 판정 패널이 조건으로 씀
+        raw["DXY"]    = fred_client.fetch_series("DTWEXBGS", label="달러 지수 (항복 판정용)")
+        raw["UNRATE"] = fred_client.fetch_series("UNRATE", label="실업률 (항복 판정용)")
         raw["GOLD"] = _YahooFetcher._fetch_yahoo_series("GC=F", label="금 선물 (오버레이)")
         return raw
 
@@ -176,7 +178,7 @@ class CombinedDashboard:
         groups = [
             FedSupplyGroup(raw, released), TreasuryChannelGroup(raw, released),
             NetLiquidityGroup(raw, released),
-            FinancialMarketGroup(raw, released), GlobalDollarGroup(raw, released),
+            FinancialMarketGroup(raw, released),
         ]
         results = []
         for group in groups:

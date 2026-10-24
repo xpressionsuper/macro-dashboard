@@ -43,7 +43,6 @@ from indicators.fed_supply       import FedSupplyGroup
 from indicators.treasury_channel import TreasuryChannelGroup
 from indicators.net_liquidity    import NetLiquidityGroup
 from indicators.financial_market import FinancialMarketGroup
-from indicators.global_dollar    import GlobalDollarGroup
 from indicators.base             import IndicatorResult
 from dashboard.chart_builder     import ChartBuilder
 from dashboard.html_exporter     import HtmlExporter
@@ -155,7 +154,6 @@ class MacroDashboard:
             TreasuryChannelGroup(raw),
             NetLiquidityGroup(raw),
             FinancialMarketGroup(raw),
-            GlobalDollarGroup(raw),
         ]
 
         all_results: list[IndicatorResult] = []

@@ -45,8 +45,6 @@ SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"}
 
 # y축 눈금 상한 고정 (0 ~ 지정값) — 없는 지표는 자동 스케일 유지
 Y_MAX_OVERRIDE: dict[str, float] = {
-    "UNRATE":  5,      # 실업률 (%)
-    "SAHM":    2,       # Sahm Rule 경기침체 지표
     "ICSA_R":  1000,    # 신규 실업수당 청구건수 (천 건)
     "CCSA":    5000,    # 지속 실업수당 청구건수 (천 명)
 }

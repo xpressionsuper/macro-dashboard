@@ -243,14 +243,6 @@ FINANCIAL_MARKET: list[IndicatorMeta] = [
         when_down="전반적인 신용시장 여건이 안정적일 때 축소됩니다.",
     ),
     IndicatorMeta(
-        key="SLOOS", name_ko="은행 대출태도 조사 (SLOOS)", name_en="Bank Lending Standards",
-        description="연준이 분기마다 주요 은행들을 설문해, 기업대출 심사 기준을 얼마나 조이고 있는지(순응답 비율)를 집계한 지표입니다. 금리나 스프레드처럼 '가격'이 아니라 '대출을 내주는 태도' 자체를 직접 묻기 때문에, 신용경색이 실제로 은행 창구에서 벌어지고 있는지를 가장 직접적으로 보여줍니다.",
-        direction="↑신용경색", source="FRED: DRTSCILM", category=4,
-        fred_id="DRTSCILM", unit="%",
-        when_up="은행들이 부실 우려로 대출 승인 문턱을 높일 때 상승합니다(양수=조이는 은행이 더 많음). 과거 침체 직전마다 이 수치가 크게 튀어 올랐습니다.",
-        when_down="은행들이 대출을 적극적으로 내주려 할 때 하락·음수로 전환합니다(음수=완화하는 은행이 더 많음).",
-    ),
-    IndicatorMeta(
         key="NFCI", name_ko="금융조건지수 (시카고 Fed)", name_en="NFCI",
         description="시카고 연은이 금리, 신용스프레드, 주가 변동성, 환율 등 100개 이상의 변수를 하나로 압축한 종합 금융여건 지수입니다. 0을 기준으로 평균적인 금융여건을 나타내며, 개별 지표를 하나하나 보지 않고 '지금 돈 빌리기가 평소보다 쉬운지 어려운지'를 한눈에 파악할 때 유용합니다.",
         direction="↓조건 완화", source="FRED: NFCI", category=4,
@@ -305,55 +297,14 @@ FINANCIAL_MARKET: list[IndicatorMeta] = [
 HIDDEN_FROM_TABLE: set[str] = {"IORB", "DGS2", "MBS"}
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  ⑤ 글로벌 달러 유동성 지표
-#  역외 달러 공급과 환율 메커니즘
-# ══════════════════════════════════════════════════════════════════════
-GLOBAL_DOLLAR: list[IndicatorMeta] = [
-    IndicatorMeta(
-        key="DXY", name_ko="달러 지수 (Broad)", name_en="USD Broad Index",
-        description="유로, 엔, 위안 등 주요 교역국 통화 바스켓 대비 미국 달러의 종합 가치입니다. 전 세계 무역·부채의 상당 부분이 달러로 표시되기 때문에, 달러가 강해지면 다른 나라들은 달러 빚을 갚기가 더 힘들어지고 원자재·수입품 가격도 자국 통화 기준으로 비싸집니다. 즉 미국 밖의(역외) 달러 유동성이 실제로 부족해지는 효과를 낳습니다.",
-        direction="↑달러 공급 감소", source="FRED: DTWEXBGS", category=5,
-        fred_id="DTWEXBGS", unit="",
-        when_up="연준이 다른 나라 중앙은행보다 긴축적이거나, 글로벌 위기 시 안전자산인 달러 수요가 몰릴 때 상승합니다. 역외(해외) 달러가 귀해진다는 뜻이라 신흥국 달러부채 상환 부담이 커집니다.",
-        when_down="연준이 상대적으로 완화적이거나 글로벌 위험선호 심리가 강할 때 하락합니다. 신흥국·원자재에는 우호적입니다.",
-    ),
-    IndicatorMeta(
-        key="KRW", name_ko="원/달러 환율", name_en="KRW/USD",
-        description="1달러를 사는 데 필요한 원화 금액입니다. 한국은 수출 비중이 크고 외국인 자금 유출입에 민감한 소규모 개방경제라, 원/달러 환율은 한국 안의 달러 유동성 사정과 외국인 투자심리를 실시간으로 보여주는 온도계 역할을 합니다.",
-        direction="원↑ → 리스크", source="FRED: DEXKOUS", category=5,
-        fred_id="DEXKOUS", unit="KRW/USD",
-        when_up="(원화 약세) 외국인이 한국 주식·채권을 팔고 달러로 바꿔 나가거나, 글로벌 달러 강세·위험회피 심리가 강할 때 오릅니다. 수입물가 상승·외화부채 상환 부담 증가로 이어집니다.",
-        when_down="(원화 강세) 외국인 자금이 유입되거나 무역흑자·달러 약세가 겹칠 때 내립니다.",
-    ),
-    IndicatorMeta(
-        key="JPY", name_ko="엔/달러 환율", name_en="JPY/USD",
-        description="1달러를 사는 데 필요한 엔화 금액입니다. 일본은 오랫동안 초저금리를 유지해 와서, 투자자들이 싼 엔화를 빌려 미국 등 고금리·고수익 자산에 투자하는 '엔캐리 트레이드'가 전 세계에 광범위하게 퍼져 있습니다. 이 거래 규모가 워낙 커서, 엔화 환율의 급변동은 전 세계 자산시장에 파급되는 힘을 가지고 있습니다.",
-        direction="엔↑ → 리스크", source="FRED: DEXJPUS", category=5,
-        fred_id="DEXJPUS", unit="JPY/USD",
-        when_up="(엔화 약세) 일본과 미국의 금리차가 벌어져 저리로 엔을 빌려 달러 자산에 투자하는 '엔캐리 트레이드'가 활발할 때 상승합니다.",
-        when_down="(엔화 강세, 급락 시 위험) 일본은행이 금리를 올리거나 엔캐리 트레이드가 급격히 청산될 때 하락합니다. 2024년 8월처럼 단기간 급락하면 전 세계 위험자산 투매로 번질 수 있습니다.",
-    ),
-    IndicatorMeta(
-        key="SWPT", name_ko="Fed 스왑라인 잔고", name_en="Central Bank Swaps",
-        description="연준이 유럽중앙은행·일본은행 등 주요국 중앙은행과 맺은 통화스왑 라인을 통해 실제로 얼마나 많은 달러가 해외로 공급됐는지를 보여줍니다. 해외 은행들은 달러 표시 자산(미국 국채, 회사채 등)을 많이 갖고 있어 늘 달러 자금이 필요한데, 위기 시 달러 조달이 막히면 이 창구를 통해 연준이 직접 달러를 공급합니다. 평소엔 잔고가 거의 0이라, 조금이라도 늘어나면 그 자체가 이례적인 신호입니다.",
-        direction="↑달러부족 신호", source="FRED: SWPT", category=5,
-        fred_id="SWPT", unit="$B", divisor=1_000,
-        when_up="해외 은행들이 달러 자금을 구하지 못해 각국 중앙은행이 연준과의 통화스왑을 통해 달러를 끌어다 쓸 때 급증합니다. 2008년, 2020년처럼 글로벌 달러 부족 위기의 대표 신호입니다.",
-        when_down="평상시에는 거의 0에 가깝습니다. 위기가 진정되면 스왑을 상환하며 다시 줄어듭니다.",
-    ),
-]
-
-
 # ── 카테고리 통합 딕셔너리 ────────────────────────────────────────────
 CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
     1: ("① 연준(Fed) 직접 공급 지표",    "Fed가 직접 조절하는 유동성 채널",               FED_SUPPLY),
     2: ("② 재무부(Treasury) 채널 지표",  "TGA와 발행 전략으로 시중 유동성을 흡수/방출",   TREASURY_CHANNEL),
     3: ("③ 합성(Net) 유동성 지표",       "연준·재무부 데이터를 결합한 실질 유동성 계량",  NET_LIQUIDITY),
     4: ("④ 금융시장 유동성 지표",        "시장에서 관측되는 유동성 가격·스트레스 신호",    FINANCIAL_MARKET),
-    5: ("⑤ 글로벌 달러 유동성 지표",    "역외 달러 공급과 환율 메커니즘",               GLOBAL_DOLLAR),
 }
 
 ALL_INDICATORS: list[IndicatorMeta] = (
-    FED_SUPPLY + TREASURY_CHANNEL + NET_LIQUIDITY + FINANCIAL_MARKET + GLOBAL_DOLLAR
+    FED_SUPPLY + TREASURY_CHANNEL + NET_LIQUIDITY + FINANCIAL_MARKET
 )
