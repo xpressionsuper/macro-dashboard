@@ -96,11 +96,15 @@ class CombinedDashboard:
         liq_released = FredClient(liq_cfg.FRED_API_KEY).fetch_batch_release_dates(liq_cfg.ALL_INDICATORS)
         rec_released = FredClient(rec_cfg.FRED_API_KEY).fetch_batch_release_dates(rec_cfg.ALL_INDICATORS)
         inf_released = FredClient(liq_cfg.FRED_API_KEY).fetch_batch_release_dates(inf_cfg.ALL_INDICATORS)
+        inv_released = self._derived_release_dates({
+            "BUFFETT":      [inv_cfg.EQUITY_MV_FRED_ID, inv_cfg.GDP_FRED_ID],
+            "INTEREST_GDP": ["A091RC1Q027SBEA", inv_cfg.GDP_FRED_ID],
+        })
 
         liq_results = self._run_liquidity_diagnosis(liq_raw, liq_released)
         rec_results = self._run_recession_diagnosis(rec_raw, rec_released)
         inf_results = self._run_generic_diagnosis(inf_raw, inf_cfg.CATEGORY_META, inf_released)
-        inv_results = self._run_generic_diagnosis(inv_raw, inv_cfg.CATEGORY_META)
+        inv_results = self._run_generic_diagnosis(inv_raw, inv_cfg.CATEGORY_META, inv_released)
         for r in rec_results:
             r.category += REC_OFFSET
         for r in inf_results:
@@ -374,6 +378,17 @@ class CombinedDashboard:
         except Exception as exc:
             print(f"  ❌  {label:<36} [{sid}]  최종 실패 → {exc}")
             return pd.Series(dtype=float, name=sid)
+
+    @staticmethod
+    def _derived_release_dates(sources: dict[str, list[str]]) -> dict[str, str]:
+        """계산 지표의 발표일 = 원본 FRED 시리즈 중 가장 늦게 갱신된 날 (원본이 다 나와야 계산되므로)."""
+        fred_client = FredClient(liq_cfg.FRED_API_KEY)
+        released = {}
+        for key, fred_ids in sources.items():
+            dates = [d for d in (fred_client.fetch_release_date(fid) for fid in fred_ids) if d]
+            if dates:
+                released[key] = max(dates)
+        return released
 
     # ── 공용: 카테고리 메타 기반 범용 진단 ────────────────────────────
 
