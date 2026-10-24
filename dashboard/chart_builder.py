@@ -39,9 +39,10 @@ COMBINED_CHARTS: dict[str, list[str]] = {
     "SOFR":     ["IORB"],          # ④ SOFR 차트에 IORB 함께
     "DGS10":    ["DGS2"],          # ④ 10Y + 2Y 함께
     "NET_LIQ":  [],                # ③ 별도 처리
+    "KR_FOREIGN_NET": ["KR_INST_NET", "KR_INDIV_NET"],   # 한국 수급: 외국인·기관·개인 한 차트
 }
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
-SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"}
+SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2", "KR_INST_NET", "KR_INDIV_NET"}
 
 # y축 눈금 상한 고정 (0 ~ 지정값) — 없는 지표는 자동 스케일 유지
 Y_MAX_OVERRIDE: dict[str, float] = {
@@ -186,8 +187,8 @@ class ChartBuilder:
                     y=0, line_dash="dot", line_color="#ff6b6b", line_width=1,
                     row=row, col=1,
                 )
-            # NFCI: 0선
-            if slot[0].key == "NFCI":
+            # NFCI·누적 순매수: 0선
+            if slot[0].key in ("NFCI", "KR_FOREIGN_NET"):
                 fig.add_hline(
                     y=0, line_dash="dot", line_color="#ffd166", line_width=1,
                     row=row, col=1,

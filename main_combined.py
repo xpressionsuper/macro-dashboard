@@ -11,7 +11,9 @@ main_combined.py ─ 유동성 + 경기침체 통합 대시보드 진입점
   python main_combined.py
 """
 
+import os
 import sys
+import time
 import warnings
 from datetime import datetime
 
@@ -253,7 +255,61 @@ class CombinedDashboard:
         else:
             raw["DEBT_SHORT_SHARE"] = pd.Series(dtype=float, name="DEBT_SHORT_SHARE")
 
+        raw.update(self._fetch_kis_kospi_flows())
         return raw
+
+    @staticmethod
+    def _fetch_kis_kospi_flows() -> dict[str, pd.Series]:
+        """
+        한국투자증권 Open API '시장별 투자자매매동향(일별)'로 KOSPI 외국인·기관·개인
+        순매수 대금을 받아 KR_FLOW_START부터 누적합(조원)으로 만듭니다.
+        한 번 호출에 최근 300거래일이 오므로 가장 오래된 날짜 전날로 옮겨 가며 반복합니다.
+        """
+        keys = {"KR_FOREIGN_NET": "frgn_ntby_tr_pbmn", "KR_INST_NET": "orgn_ntby_tr_pbmn",
+                "KR_INDIV_NET": "prsn_ntby_tr_pbmn"}
+        out = {k: pd.Series(dtype=float, name=k) for k in keys}
+        app_key, app_secret = os.environ.get("KIS_APP_KEY", ""), os.environ.get("KIS_APP_SECRET", "")
+        if not app_key or not app_secret:
+            print(f"  ❌  {'KOSPI 투자자별 수급':<30} [KIS]  KIS_APP_KEY/KIS_APP_SECRET 없음 → 건너뜀")
+            return out
+        base = "https://openapi.koreainvestment.com:9443"
+        try:
+            tok = requests.post(f"{base}/oauth2/tokenP", json={
+                "grant_type": "client_credentials", "appkey": app_key, "appsecret": app_secret,
+            }, timeout=15).json()["access_token"]
+            headers = {"authorization": f"Bearer {tok}", "appkey": app_key, "appsecret": app_secret,
+                       "tr_id": "FHPTJ04040000", "custtype": "P"}
+
+            rows, cursor = [], pd.Timestamp.now().normalize()
+            start = pd.Timestamp(inv_cfg.KR_FLOW_START)
+            for _ in range(20):   # 300거래일 × 20 ≈ 24년 — 무한루프 방지용 상한
+                ymd = cursor.strftime("%Y%m%d")
+                batch = requests.get(
+                    f"{base}/uapi/domestic-stock/v1/quotations/inquire-investor-daily-by-market",
+                    headers=headers, timeout=15, params={
+                        "FID_COND_MRKT_DIV_CODE": "U", "FID_INPUT_ISCD": "0001",
+                        "FID_INPUT_DATE_1": ymd, "FID_INPUT_ISCD_1": "KSP",
+                        "FID_INPUT_DATE_2": ymd, "FID_INPUT_ISCD_2": "0001",
+                    },
+                ).json().get("output") or []
+                if not batch:
+                    break
+                rows += batch
+                cursor = pd.Timestamp(min(r["stck_bsop_date"] for r in batch)) - pd.Timedelta(days=1)
+                if cursor < start:
+                    break
+                time.sleep(0.5)   # 초당 호출 한도 여유 있게
+
+            df = pd.DataFrame(rows).drop_duplicates("stck_bsop_date")
+            df.index = pd.to_datetime(df["stck_bsop_date"])
+            df = df.sort_index().loc[start:]
+            for key, col in keys.items():
+                net = pd.to_numeric(df[col], errors="coerce").fillna(0)
+                out[key] = (net.cumsum() / 1e6).rename(key)   # 백만원 → 조원
+                print(f"  ✅  {key:<36} [KIS]  {len(net)} pts")
+        except Exception as exc:
+            print(f"  ❌  {'KOSPI 투자자별 수급':<30} [KIS]  최종 실패 → {exc}")
+        return out
 
     @staticmethod
     def _fetch_treasury_total_debt() -> pd.Series:
@@ -420,7 +476,7 @@ class CombinedDashboard:
         print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║         🏦📉💵📈  미국 경기·유동성·물가·투자 통합 모니터              ║
-║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭ 투자(버핏 지표)          ║
+║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭~⑰ 투자·한국 수급          ║
 ╚══════════════════════════════════════════════════════════════════════╝""")
 
 
