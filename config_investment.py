@@ -110,41 +110,6 @@ GOV_DEBT: list[IndicatorMeta] = [
 ]
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  ④ 한국 증시 수급
-#  KOSPI에서 외국인·기관·개인 중 누가 사고 누가 파는지
-#  (한국투자증권 Open API — KIS_APP_KEY/KIS_APP_SECRET 필요)
-# ══════════════════════════════════════════════════════════════════════
-KR_FLOW_START = "20160101"   # 누적 순매수의 기준 시작일 (이날부터 0에서 누적)
-
-KR_FLOW: list[IndicatorMeta] = [
-    IndicatorMeta(
-        key="KR_FOREIGN_NET", name_ko="KOSPI 외국인 누적 순매수", name_en="KOSPI Foreign Cumulative Net Buying",
-        description="2016년 1월부터 외국인이 KOSPI에서 순매수(매수금액−매도금액)한 금액을 매일 더해 나간 값입니다. 선의 절대 높이보다 기울기가 중요해, 오른쪽 위로 가면 외국인 자금이 들어오는 중, 아래로 가면 빠져나가는 중이라는 뜻입니다. 같은 차트의 기관·개인 선과 비교하면 누가 누구에게 물량을 넘기고 있는지 한눈에 보입니다.",
-        direction="↑외국인 자금 유입", source="한국투자증권 Open API (시장별 투자자매매동향)", category=4,
-        fred_id=None, unit="조원", chg_as_point=True,
-        when_up="원화 강세 기대, 반도체 등 한국 주력 업종의 이익 개선, 글로벌 위험선호(리스크온) 국면에서 외국인이 한국 주식을 사들일 때 상승합니다.",
-        when_down="달러 강세·원화 약세, 글로벌 위험회피(리스크오프), 신흥국 자금 이탈 시 외국인이 차익실현·비중축소에 나설 때 하락합니다. 급락 구간은 대개 지수 조정과 함께 나타납니다.",
-    ),
-    IndicatorMeta(
-        key="KR_INST_NET", name_ko="KOSPI 기관 누적 순매수", name_en="KOSPI Institutional Cumulative Net Buying",
-        description="2016년 1월부터 기관(연기금·금융투자·투신·보험·은행 등 합계)이 KOSPI에서 순매수한 금액의 누적값입니다.",
-        direction="↑기관 자금 유입", source="한국투자증권 Open API (시장별 투자자매매동향)", category=4,
-        fred_id=None, unit="조원", chg_as_point=True,
-        when_up="연기금의 국내주식 비중 확대, 펀드 자금 유입, 지수 급락 시 저가매수 등으로 기관이 순매수할 때 상승합니다.",
-        when_down="연기금 리밸런싱(주가 상승 후 비중 축소), 펀드 환매 등으로 기관이 순매도할 때 하락합니다.",
-    ),
-    IndicatorMeta(
-        key="KR_INDIV_NET", name_ko="KOSPI 개인 누적 순매수", name_en="KOSPI Retail Cumulative Net Buying",
-        description="2016년 1월부터 개인투자자가 KOSPI에서 순매수한 금액의 누적값입니다. 외국인이 팔 때 개인이 받아내는 경우가 많아 외국인 선과 거울처럼 움직이는 경향이 있습니다.",
-        direction="↑개인 자금 유입", source="한국투자증권 Open API (시장별 투자자매매동향)", category=4,
-        fred_id=None, unit="조원", chg_as_point=True,
-        when_up="지수 하락 시 저가매수, 2020~2021년 '동학개미'처럼 신규 개인자금이 증시로 몰릴 때 상승합니다.",
-        when_down="개인이 차익실현하거나 해외주식·예금 등으로 자금을 옮길 때 하락합니다.",
-    ),
-]
-
-
 CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
     1: (
         "① 밸류에이션 지표",
@@ -161,11 +126,6 @@ CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
         "미국 연방정부 총부채와 단기·장기 만기 구성",
         GOV_DEBT,
     ),
-    4: (
-        "④ 한국 증시 수급",
-        "KOSPI 외국인·기관·개인 누적 순매수",
-        KR_FLOW,
-    ),
 }
 
-ALL_INDICATORS: list[IndicatorMeta] = VALUATION + SENTIMENT + GOV_DEBT + KR_FLOW
+ALL_INDICATORS: list[IndicatorMeta] = VALUATION + SENTIMENT + GOV_DEBT

@@ -41,6 +41,7 @@ import config as liq_cfg
 import config_recession as rec_cfg
 import config_inflation as inf_cfg
 import config_investment as inv_cfg
+import config_korea as kr_cfg
 from data.fred_client      import FredClient
 from data.treasury_client  import TreasuryClient
 from data.derived          import DerivedCalculator
@@ -59,6 +60,7 @@ OUTPUT_HTML  = "combined_dashboard.html"
 REC_OFFSET   = 5    # 경기침체 카테고리 번호를 5만큼 밀어 유동성(1~5)과 겹치지 않게 함
 INF_OFFSET   = 9    # 물가 카테고리 번호를 9만큼 밀어 유동성+침체(1~9)와 겹치지 않게 함
 INV_OFFSET   = 13   # 투자 카테고리 번호를 13만큼 밀어 앞의 세 대시보드(1~13)와 겹치지 않게 함
+KR_OFFSET    = 16   # 한국 카테고리 번호를 16만큼 밀어 앞의 네 대시보드(1~16)와 겹치지 않게 함
 
 
 class CombinedDashboard:
@@ -82,9 +84,10 @@ class CombinedDashboard:
         inf_raw = self._collect_inflation_data()
         print(f"       수집 완료: {len(inf_raw)}개 시리즈\n")
 
-        print("[4/8]  투자 데이터 수집")
+        print("[4/8]  투자·한국 데이터 수집")
         inv_raw = self._collect_investment_data()
-        print(f"       수집 완료: {len(inv_raw)}개 시리즈\n")
+        kr_raw  = self._fetch_kis_kospi_flows()
+        print(f"       수집 완료: {len(inv_raw) + len(kr_raw)}개 시리즈\n")
 
         print("[5/8]  파생 지표 계산 (유동성 파생 + 물가 YoY 변환)")
         derived = DerivedCalculator(liq_raw).compute()
@@ -106,20 +109,24 @@ class CombinedDashboard:
         rec_results = self._run_recession_diagnosis(rec_raw, rec_released)
         inf_results = self._run_generic_diagnosis(inf_raw, inf_cfg.CATEGORY_META, inf_released)
         inv_results = self._run_generic_diagnosis(inv_raw, inv_cfg.CATEGORY_META, inv_released)
+        kr_results  = self._run_generic_diagnosis(kr_raw, kr_cfg.CATEGORY_META)
         for r in rec_results:
             r.category += REC_OFFSET
         for r in inf_results:
             r.category += INF_OFFSET
         for r in inv_results:
             r.category += INV_OFFSET
-        all_results = liq_results + rec_results + inf_results + inv_results
+        for r in kr_results:
+            r.category += KR_OFFSET
+        all_results = liq_results + rec_results + inf_results + inv_results + kr_results
         print(
             f"       진단 완료: {len(all_results)}개 지표 "
-            f"(유동성 {len(liq_results)} + 침체 {len(rec_results)} + 물가 {len(inf_results)} + 투자 {len(inv_results)})"
+            f"(유동성 {len(liq_results)} + 침체 {len(rec_results)} + 물가 {len(inf_results)} "
+            f"+ 투자 {len(inv_results)} + 한국 {len(kr_results)})"
         )
 
-        # SPX/GOLD 벤치마크는 모든 파이프라인이 공유 → 한 번만 수집
-        merged_raw = {**liq_raw, **rec_raw, **inf_raw, **inv_raw}
+        # SPX/GOLD 벤치마크는 모든 파이프라인이 공유 → 한 번만 수집 (한국 차트는 KOSPI)
+        merged_raw = {**liq_raw, **rec_raw, **inf_raw, **inv_raw, **kr_raw}
         merged_raw["SPX"]  = liq_raw.get("SPX")
         merged_raw["GOLD"] = liq_raw.get("GOLD")
 
@@ -128,6 +135,7 @@ class CombinedDashboard:
             **{cat + REC_OFFSET: meta for cat, meta in rec_cfg.CATEGORY_META.items()},
             **{cat + INF_OFFSET: meta for cat, meta in inf_cfg.CATEGORY_META.items()},
             **{cat + INV_OFFSET: meta for cat, meta in inv_cfg.CATEGORY_META.items()},
+            **{cat + KR_OFFSET: meta for cat, meta in kr_cfg.CATEGORY_META.items()},
         }
 
         print("\n[7/8]  차트 생성")
@@ -146,6 +154,7 @@ class CombinedDashboard:
                 ("경기침체", [cat + REC_OFFSET for cat in rec_cfg.CATEGORY_META.keys()]),
                 ("물가", [cat + INF_OFFSET for cat in inf_cfg.CATEGORY_META.keys()]),
                 ("투자", [cat + INV_OFFSET for cat in inv_cfg.CATEGORY_META.keys()]),
+                ("한국", [cat + KR_OFFSET for cat in kr_cfg.CATEGORY_META.keys()]),
             ],
             top_panel=capitulation.render_panel(merged_raw),
             top_nav=("🏳️ 연준 항복 판정", "fed-capitulation"),
@@ -255,19 +264,19 @@ class CombinedDashboard:
         else:
             raw["DEBT_SHORT_SHARE"] = pd.Series(dtype=float, name="DEBT_SHORT_SHARE")
 
-        raw.update(self._fetch_kis_kospi_flows())
         return raw
+
+    # ── 한국 증시 수급 파이프라인 ─────────────────────────────────────
 
     @staticmethod
     def _fetch_kis_kospi_flows() -> dict[str, pd.Series]:
         """
-        한국투자증권 Open API '시장별 투자자매매동향(일별)'로 KOSPI 외국인·기관·개인
-        순매수 대금을 받아 KR_FLOW_START부터 누적합(조원)으로 만듭니다.
+        한국투자증권 Open API '시장별 투자자매매동향(일별)'로 KOSPI 투자 주체별
+        순매수 대금을 받아 KR_FLOW_START부터 누적합(조원)으로 만들고, 같은 응답의
+        KOSPI 종가도 차트 오버레이용으로 꺼냅니다.
         한 번 호출에 최근 300거래일이 오므로 가장 오래된 날짜 전날로 옮겨 가며 반복합니다.
         """
-        keys = {"KR_FOREIGN_NET": "frgn_ntby_tr_pbmn", "KR_INST_NET": "orgn_ntby_tr_pbmn",
-                "KR_INDIV_NET": "prsn_ntby_tr_pbmn"}
-        out = {k: pd.Series(dtype=float, name=k) for k in keys}
+        out = {k: pd.Series(dtype=float, name=k) for k in [*kr_cfg.KIS_FIELDS, "KOSPI"]}
         app_key, app_secret = os.environ.get("KIS_APP_KEY", ""), os.environ.get("KIS_APP_SECRET", "")
         if not app_key or not app_secret:
             print(f"  ❌  {'KOSPI 투자자별 수급':<30} [KIS]  KIS_APP_KEY/KIS_APP_SECRET 없음 → 건너뜀")
@@ -281,7 +290,7 @@ class CombinedDashboard:
                        "tr_id": "FHPTJ04040000", "custtype": "P"}
 
             rows, cursor = [], pd.Timestamp.now().normalize()
-            start = pd.Timestamp(inv_cfg.KR_FLOW_START)
+            start = pd.Timestamp(kr_cfg.KR_FLOW_START)
             for _ in range(20):   # 300거래일 × 20 ≈ 24년 — 무한루프 방지용 상한
                 ymd = cursor.strftime("%Y%m%d")
                 batch = requests.get(
@@ -303,10 +312,11 @@ class CombinedDashboard:
             df = pd.DataFrame(rows).drop_duplicates("stck_bsop_date")
             df.index = pd.to_datetime(df["stck_bsop_date"])
             df = df.sort_index().loc[start:]
-            for key, col in keys.items():
+            for key, col in kr_cfg.KIS_FIELDS.items():
                 net = pd.to_numeric(df[col], errors="coerce").fillna(0)
                 out[key] = (net.cumsum() / 1e6).rename(key)   # 백만원 → 조원
                 print(f"  ✅  {key:<36} [KIS]  {len(net)} pts")
+            out["KOSPI"] = pd.to_numeric(df["bstp_nmix_prpr"], errors="coerce").dropna().rename("KOSPI")
         except Exception as exc:
             print(f"  ❌  {'KOSPI 투자자별 수급':<30} [KIS]  최종 실패 → {exc}")
         return out
@@ -476,7 +486,7 @@ class CombinedDashboard:
         print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║         🏦📉💵📈  미국 경기·유동성·물가·투자 통합 모니터              ║
-║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭~⑰ 투자·한국 수급          ║
+║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭~⑯ 투자   ⑰~⑱ 한국 수급    ║
 ╚══════════════════════════════════════════════════════════════════════╝""")
 
 

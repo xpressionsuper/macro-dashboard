@@ -39,10 +39,19 @@ COMBINED_CHARTS: dict[str, list[str]] = {
     "SOFR":     ["IORB"],          # ④ SOFR 차트에 IORB 함께
     "DGS10":    ["DGS2"],          # ④ 10Y + 2Y 함께
     "NET_LIQ":  [],                # ③ 별도 처리
-    "KR_FOREIGN_NET": ["KR_INST_NET", "KR_INDIV_NET"],   # 한국 수급: 외국인·기관·개인 한 차트
+    # 한국 ①: 외국인·기관·개인·기타법인 한 차트 / ②: 기관 세부 7개 한 차트
+    "KR_FOREIGN_NET": ["KR_INST_NET", "KR_INDIV_NET", "KR_CORP_NET"],
+    "KR_PENSION_NET": ["KR_SECURITIES_NET", "KR_TRUST_NET", "KR_PE_NET",
+                       "KR_INSURANCE_NET", "KR_BANK_NET", "KR_OTHER_FIN_NET"],
+}
+# 지표가 많아 이름을 이어 붙이면 너무 긴 차트의 제목
+SLOT_TITLES: dict[str, str] = {
+    "KR_FOREIGN_NET": "KOSPI 투자 주체별 누적 순매수",
+    "KR_PENSION_NET": "KOSPI 기관 세부 누적 순매수",
 }
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
-SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2", "KR_INST_NET", "KR_INDIV_NET"}
+SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"} \
+    | set(COMBINED_CHARTS["KR_FOREIGN_NET"]) | set(COMBINED_CHARTS["KR_PENSION_NET"])
 
 # y축 눈금 상한 고정 (0 ~ 지정값) — 없는 지표는 자동 스케일 유지
 Y_MAX_OVERRIDE: dict[str, float] = {
@@ -123,8 +132,8 @@ class ChartBuilder:
         for slot in chart_slots:
             fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
             self._add_slot_traces(fig, slot, 1)
-            self._add_benchmark_overlays(fig, 1)
-            title = " & ".join(r.name_ko for r in slot)
+            self._add_benchmark_overlays(fig, 1, korea=slot[0].key.startswith("KR_"))
+            title = SLOT_TITLES.get(slot[0].key) or " & ".join(r.name_ko for r in slot)
             self._apply_layout(fig, height=330, title=title)
             figures.append((fig, slot))
 
@@ -188,7 +197,7 @@ class ChartBuilder:
                     row=row, col=1,
                 )
             # NFCI·누적 순매수: 0선
-            if slot[0].key in ("NFCI", "KR_FOREIGN_NET"):
+            if slot[0].key == "NFCI" or slot[0].key.startswith("KR_"):
                 fig.add_hline(
                     y=0, line_dash="dot", line_color="#ffd166", line_width=1,
                     row=row, col=1,
@@ -200,16 +209,19 @@ class ChartBuilder:
                     row=row, col=1,
                 )
 
-    # ── 시장 벤치마크(S&P500·금) 오버레이 ────────────────────────────
+    # ── 시장 벤치마크(S&P500·금 / 한국은 KOSPI) 오버레이 ──────────────
 
     _BENCHMARKS = [
         ("SPX",  "S&P500", "#f4a261", "dot"),
         ("GOLD", "금",     "#ffd700", "dash"),
     ]
+    _BENCHMARKS_KR = [
+        ("KOSPI", "KOSPI", "#e6edf3", "dot"),
+    ]
 
-    def _add_benchmark_overlays(self, fig: go.Figure, row: int) -> None:
-        """모든 차트 오른쪽 보조축에 S&P500·금 가격을 겹쳐 그립니다."""
-        for key, label, color, dash in self._BENCHMARKS:
+    def _add_benchmark_overlays(self, fig: go.Figure, row: int, korea: bool = False) -> None:
+        """차트 오른쪽 보조축에 S&P500·금(한국 지표면 KOSPI) 가격을 겹쳐 그립니다."""
+        for key, label, color, dash in (self._BENCHMARKS_KR if korea else self._BENCHMARKS):
             series = self._raw.get(key, pd.Series(dtype=float))
             if series.empty:
                 continue
