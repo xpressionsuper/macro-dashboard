@@ -46,8 +46,8 @@ COMBINED_CHARTS: dict[str, list[str]] = {
 }
 # 지표가 많아 이름을 이어 붙이면 너무 긴 차트의 제목
 SLOT_TITLES: dict[str, str] = {
-    "KR_FOREIGN_NET": "KOSPI 투자 주체별 누적 순매수",
-    "KR_PENSION_NET": "KOSPI 기관 세부 누적 순매수",
+    "KR_FOREIGN_NET": "외국인 누적 순매수",
+    "KR_PENSION_NET": "기관 세부 수급",
 }
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
 SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"} \

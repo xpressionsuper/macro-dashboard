@@ -369,7 +369,7 @@ class HtmlExporter:
         head = slot_results[0]
         if len(slot_results) > 1 and head.key.startswith("KR_"):
             return replace(head, description="<br><br>".join(
-                f"<b>{r.name_ko.removesuffix(' 누적 순매수')} {r.latest_value:+,.1f}{r.unit}</b> — {r.description}"
+                f"<b>{r.name_ko.removesuffix(' 누적 순매수')}</b> — {r.description}"
                 for r in slot_results
             ))
         return head

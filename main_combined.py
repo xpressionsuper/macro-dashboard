@@ -276,7 +276,7 @@ class CombinedDashboard:
         KOSPI 종가도 차트 오버레이용으로 꺼냅니다.
         한 번 호출에 최근 300거래일이 오므로 가장 오래된 날짜 전날로 옮겨 가며 반복합니다.
         """
-        out = {k: pd.Series(dtype=float, name=k) for k in [*kr_cfg.KIS_FIELDS, "KOSPI"]}
+        out = {k: pd.Series(dtype=float, name=k) for k in [*kr_cfg.KIS_FIELDS, *kr_cfg.KIS_PROGRAM_FIELDS, "KOSPI"]}
         app_key, app_secret = os.environ.get("KIS_APP_KEY", ""), os.environ.get("KIS_APP_SECRET", "")
         if not app_key or not app_secret:
             print(f"  ❌  {'KOSPI 투자자별 수급':<30} [KIS]  KIS_APP_KEY/KIS_APP_SECRET 없음 → 건너뜀")
@@ -319,6 +319,30 @@ class CombinedDashboard:
             out["KOSPI"] = pd.to_numeric(df["bstp_nmix_prpr"], errors="coerce").dropna().rename("KOSPI")
         except Exception as exc:
             print(f"  ❌  {'KOSPI 투자자별 수급':<30} [KIS]  최종 실패 → {exc}")
+            return out
+
+        # 프로그램매매(차익) — 같은 토큰 재사용 (KIS 토큰 발급은 1분에 1번 제한).
+        # 기간을 길게 주면 응답이 시간 초과되므로 1년 단위로 끊어서 요청
+        try:
+            rows = []
+            for year in range(start.year, pd.Timestamp.now().year + 1):
+                rows += requests.get(
+                    f"{base}/uapi/domestic-stock/v1/quotations/comp-program-trade-daily",
+                    headers={**headers, "tr_id": "FHPPG04600001"}, timeout=30, params={
+                        "FID_COND_MRKT_DIV_CODE": "J", "FID_MRKT_CLS_CODE": "K",
+                        "FID_INPUT_DATE_1": f"{year}0101", "FID_INPUT_DATE_2": f"{year}1231",
+                    },
+                ).json().get("output") or []
+                time.sleep(0.5)
+            df = pd.DataFrame(rows).drop_duplicates("stck_bsop_date")
+            df.index = pd.to_datetime(df["stck_bsop_date"])
+            df = df.sort_index().loc[start:]
+            for key, col in kr_cfg.KIS_PROGRAM_FIELDS.items():
+                net = pd.to_numeric(df[col], errors="coerce").fillna(0)
+                out[key] = (net.cumsum() / 1e6).rename(key)   # 백만원 → 조원
+                print(f"  ✅  {key:<36} [KIS]  {len(net)} pts")
+        except Exception as exc:
+            print(f"  ❌  {'KOSPI 프로그램매매':<30} [KIS]  최종 실패 → {exc}")
         return out
 
     @staticmethod
@@ -486,7 +510,7 @@ class CombinedDashboard:
         print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║         🏦📉💵📈  미국 경기·유동성·물가·투자 통합 모니터              ║
-║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭~⑯ 투자   ⑰~⑱ 한국 수급    ║
+║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭~⑯ 투자   ⑰ 한국 수급         ║
 ╚══════════════════════════════════════════════════════════════════════╝""")
 
 
