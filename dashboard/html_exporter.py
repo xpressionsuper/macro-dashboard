@@ -179,7 +179,28 @@ _JS_NAV = """
 
   sections.forEach(function (s) { observer.observe(s); });
 
-  // 지표별 복사 버튼 — 차트를 PNG 이미지로 클립보드에 넣음
+  // 지표별 복사 버튼 — 차트를 PNG 이미지로.
+  // PC: 클립보드에 바로 넣음 / 휴대폰: 모바일 브라우저는 이미지 클립보드 쓰기가 불안정해서
+  //     OS 공유창을 띄움 (거기서 '복사'·'이미지 저장' 선택)
+  var isPhone = window.matchMedia('(pointer: coarse)').matches && !!navigator.canShare;
+  var chartOf = function (btn) { return btn.closest('.indicator-row').querySelector('.js-plotly-plot'); };
+  var pngOf = function (chart) {
+    // 차트당 한 번만 렌더링해 재사용 (공유창은 탭 직후에만 열 수 있어 미리 만들어 둠)
+    if (!chart._png) {
+      chart._png = Plotly.toImage(chart, { format: 'png', scale: 2 })
+        .then(function (url) { return fetch(url); })
+        .then(function (r) { return r.blob(); })
+        .then(function (b) { chart._file = new File([b], 'chart.png', { type: 'image/png' }); return b; });
+    }
+    return chart._png;
+  };
+  if (isPhone) {
+    document.addEventListener('pointerdown', function (e) {
+      var btn = e.target.closest('.copy-btn');
+      if (btn && chartOf(btn)) pngOf(chartOf(btn));
+    });
+  }
+
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('.copy-btn');
     if (!btn) return;
@@ -187,8 +208,25 @@ _JS_NAV = """
       btn.textContent = label; btn.classList.add(cls);
       setTimeout(function () { btn.textContent = '📋 Copy'; btn.classList.remove(cls); }, 1500);
     };
-    var chart = btn.closest('.indicator-row').querySelector('.js-plotly-plot');
-    if (!chart || !window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) {
+    var chart = chartOf(btn);
+    if (!chart) return flash('Not supported', 'fail');
+
+    if (isPhone) {
+      var share = function () {
+        return navigator.share({ files: [chart._file] }).then(
+          function () { flash('Shared ✓', 'done'); },
+          function (err) {
+            if (err.name === 'AbortError') return;   // 사용자가 공유창을 닫음
+            // 이미지 준비가 늦어 탭 효력이 끝난 경우 — 이미지는 이제 준비됐으니 다시 탭하면 바로 열림
+            flash(err.name === 'NotAllowedError' ? 'Tap again' : 'Failed', 'fail');
+          }
+        );
+      };
+      if (chart._file) return share();
+      return pngOf(chart).then(share, function () { flash('Failed', 'fail'); });
+    }
+
+    if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) {
       return flash('Not supported', 'fail');
     }
     // Safari는 클릭 직후 동기적으로 write를 불러야 하므로 이미지는 Promise로 넘김
