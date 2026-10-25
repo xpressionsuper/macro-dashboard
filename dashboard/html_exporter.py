@@ -12,7 +12,6 @@ dashboard/html_exporter.py ─ HTML 대시보드 조립 & 저장
 
 from __future__ import annotations
 
-import html
 import json
 import math
 from dataclasses import replace
@@ -127,6 +126,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
              border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
 .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
 .copy-btn.done  { color: var(--up); border-color: var(--up); }
+.copy-btn.fail  { color: var(--down); border-color: var(--down); }
 .row-chart { flex: 0 1 580px; min-width: 0; }
 .row-chart .chart-wrap { background: transparent; border: none; padding: 0; }
 
@@ -179,40 +179,26 @@ _JS_NAV = """
 
   sections.forEach(function (s) { observer.observe(s); });
 
-  // 지표별 복사 버튼 — 텍스트 + 차트 PNG를 함께 클립보드에 넣음.
-  // 이미지 복사가 안 되는 환경(구형 브라우저, 로컬 file:// 등)은 텍스트만 복사
+  // 지표별 복사 버튼 — 차트를 PNG 이미지로 클립보드에 넣음
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('.copy-btn');
     if (!btn) return;
-    var text = btn.dataset.copy;
-    var done = function () {
-      btn.textContent = 'Copied ✓'; btn.classList.add('done');
-      setTimeout(function () { btn.textContent = '📋 Copy'; btn.classList.remove('done'); }, 1500);
-    };
-    var fallback = function () {
-      var ta = document.createElement('textarea');
-      ta.value = text; document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta); done();
-    };
-    var copyText = function () {
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(text).then(done, fallback);
-      } else {
-        fallback();
-      }
+    var flash = function (label, cls) {
+      btn.textContent = label; btn.classList.add(cls);
+      setTimeout(function () { btn.textContent = '📋 Copy'; btn.classList.remove(cls); }, 1500);
     };
     var chart = btn.closest('.indicator-row').querySelector('.js-plotly-plot');
     if (!chart || !window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) {
-      return copyText();
+      return flash('Not supported', 'fail');
     }
     // Safari는 클릭 직후 동기적으로 write를 불러야 하므로 이미지는 Promise로 넘김
     var png = Plotly.toImage(chart, { format: 'png', scale: 2 })
       .then(function (url) { return fetch(url); })
       .then(function (r) { return r.blob(); });
-    navigator.clipboard.write([new ClipboardItem({
-      'image/png': png,
-      'text/plain': new Blob([text], { type: 'text/plain' }),
-    })]).then(done, copyText);
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]).then(
+      function () { flash('Copied ✓', 'done'); },
+      function () { flash('Failed', 'fail'); }
+    );
   });
 })();
 </script>
@@ -361,7 +347,7 @@ class HtmlExporter:
             row_cls = "indicator-row newest" if is_newest else "indicator-row"
             rows.append(f"""
 <div class="{row_cls}">
-  {self._build_row_desc(primary, is_newest=is_newest, copy_text=self._copy_text(slot_results))}
+  {self._build_row_desc(primary, is_newest=is_newest)}
   <div class="row-chart"><div class="chart-wrap">{chart_div}</div></div>
   {self._build_row_updown(primary)}
 </div>""")
@@ -432,19 +418,7 @@ class HtmlExporter:
         return f"{r.chg_disp_label} {sign}{r.chg_disp:.2f}{suffix}"
 
     @classmethod
-    def _copy_text(cls, slot_results: list[IndicatorResult]) -> str:
-        """복사 버튼용 평문 — 차트에 겹친 지표 전부를 한 줄씩."""
-        lines = []
-        for r in slot_results:
-            if math.isnan(r.latest_value):
-                lines.append(f"{r.name_ko}: 데이터 수집 실패")
-                continue
-            meta = ", ".join(x for x in (f"기준일 {r.latest_date}", cls._fmt_chg(r)) if x)
-            lines.append(f"{r.name_ko}: {cls._fmt_value(r)} ({meta}) — {r.context}")
-        return "\n".join(lines)
-
-    @classmethod
-    def _build_row_desc(cls, r: IndicatorResult, is_newest: bool = False, copy_text: str = "") -> str:
+    def _build_row_desc(cls, r: IndicatorResult, is_newest: bool = False) -> str:
         latest_str = cls._fmt_value(r)
 
         chg_badge = ""
@@ -452,10 +426,7 @@ class HtmlExporter:
         if chg:
             chg_cls = "up" if r.chg_disp >= 0 else "down"
             chg_badge = f'<span class="row-chg {chg_cls}">{chg}</span>'
-        copy_btn = (
-            f'<button class="copy-btn" type="button" data-copy="{html.escape(copy_text)}">📋 Copy</button>'
-            if copy_text else ""
-        )
+        copy_btn = '<button class="copy-btn" type="button">📋 Copy</button>'
 
         date_cls = "row-date newest" if is_newest else "row-date"
         newest_badge = ' <span class="newest-badge">최신</span>' if is_newest else ""
