@@ -12,6 +12,7 @@ dashboard/html_exporter.py ─ HTML 대시보드 조립 & 저장
 
 from __future__ import annotations
 
+import html
 import json
 import math
 from dataclasses import replace
@@ -122,6 +123,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
 .row-chg.up   { color: var(--up);   background: rgba(63,185,80,.12); }
 .row-chg.down { color: var(--down); background: rgba(248,81,73,.12); }
 .row-text  { font-size: 15px; color: var(--text); line-height: 1.55; }
+.copy-btn  { margin-left: auto; font-size: 12px; color: var(--muted); background: transparent;
+             border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+.copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+.copy-btn.done  { color: var(--up); border-color: var(--up); }
 .row-chart { flex: 0 1 580px; min-width: 0; }
 .row-chart .chart-wrap { background: transparent; border: none; padding: 0; }
 
@@ -173,6 +178,27 @@ _JS_NAV = """
   }, { threshold: 0.2 });
 
   sections.forEach(function (s) { observer.observe(s); });
+
+  // 지표별 복사 버튼 — clipboard API가 막힌 환경(로컬 file:// 등)은 textarea로 대체
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.copy-btn');
+    if (!btn) return;
+    var text = btn.dataset.copy;
+    var done = function () {
+      btn.textContent = '복사됨 ✓'; btn.classList.add('done');
+      setTimeout(function () { btn.textContent = '📋 복사'; btn.classList.remove('done'); }, 1500);
+    };
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta); done();
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
+  });
 })();
 </script>
 """
@@ -320,7 +346,7 @@ class HtmlExporter:
             row_cls = "indicator-row newest" if is_newest else "indicator-row"
             rows.append(f"""
 <div class="{row_cls}">
-  {self._build_row_desc(primary, is_newest=is_newest)}
+  {self._build_row_desc(primary, is_newest=is_newest, copy_text=self._copy_text(slot_results))}
   <div class="row-chart"><div class="chart-wrap">{chart_div}</div></div>
   {self._build_row_updown(primary)}
 </div>""")
@@ -375,20 +401,46 @@ class HtmlExporter:
         return head
 
     @staticmethod
-    def _build_row_desc(r: IndicatorResult, is_newest: bool = False) -> str:
-        latest_str = (
+    def _fmt_value(r: IndicatorResult) -> str:
+        return (
             f"${r.latest_value:,.1f}B" if r.unit == "$B"
             else f"{r.latest_value:,.2f} {r.unit}".strip()
         )
 
+    @staticmethod
+    def _fmt_chg(r: IndicatorResult) -> str:
+        """대표 증감 문자열 ("전월대비 +1.23%"), 없으면 빈 문자열."""
+        if r.chg_disp is None or math.isnan(r.chg_disp):
+            return ""
+        sign = "+" if r.chg_disp >= 0 else ""
+        suffix = "%" if r.chg_disp_is_pct else (f" {r.unit}" if r.unit else "")
+        return f"{r.chg_disp_label} {sign}{r.chg_disp:.2f}{suffix}"
+
+    @classmethod
+    def _copy_text(cls, slot_results: list[IndicatorResult]) -> str:
+        """복사 버튼용 평문 — 차트에 겹친 지표 전부를 한 줄씩."""
+        lines = []
+        for r in slot_results:
+            if math.isnan(r.latest_value):
+                lines.append(f"{r.name_ko}: 데이터 수집 실패")
+                continue
+            meta = ", ".join(x for x in (f"기준일 {r.latest_date}", cls._fmt_chg(r)) if x)
+            lines.append(f"{r.name_ko}: {cls._fmt_value(r)} ({meta}) — {r.context}")
+        return "\n".join(lines)
+
+    @classmethod
+    def _build_row_desc(cls, r: IndicatorResult, is_newest: bool = False, copy_text: str = "") -> str:
+        latest_str = cls._fmt_value(r)
+
         chg_badge = ""
-        if r.chg_disp is not None and not math.isnan(r.chg_disp):
-            sign = "+" if r.chg_disp >= 0 else ""
-            suffix = "%" if r.chg_disp_is_pct else (f" {r.unit}" if r.unit else "")
-            cls = "up" if r.chg_disp >= 0 else "down"
-            chg_badge = (
-                f'<span class="row-chg {cls}">{r.chg_disp_label} {sign}{r.chg_disp:.2f}{suffix}</span>'
-            )
+        chg = cls._fmt_chg(r)
+        if chg:
+            chg_cls = "up" if r.chg_disp >= 0 else "down"
+            chg_badge = f'<span class="row-chg {chg_cls}">{chg}</span>'
+        copy_btn = (
+            f'<button class="copy-btn" type="button" data-copy="{html.escape(copy_text)}">📋 복사</button>'
+            if copy_text else ""
+        )
 
         date_cls = "row-date newest" if is_newest else "row-date"
         newest_badge = ' <span class="newest-badge">최신</span>' if is_newest else ""
@@ -404,6 +456,7 @@ class HtmlExporter:
   <div class="row-head">
     <span class="row-name">{r.name_ko}</span>
     <span class="row-en">{r.name_en}</span>
+    {copy_btn}
   </div>
   <div class="row-head">
     <span class="row-val">{latest_str}</span>
