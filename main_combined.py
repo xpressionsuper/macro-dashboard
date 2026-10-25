@@ -45,6 +45,7 @@ import config_korea as kr_cfg
 from data.fred_client      import FredClient
 from data.treasury_client  import TreasuryClient
 from data.derived          import DerivedCalculator
+from data                  import molit_client
 from indicators.fed_supply       import FedSupplyGroup
 from indicators.treasury_channel import TreasuryChannelGroup
 from indicators.net_liquidity    import NetLiquidityGroup
@@ -86,7 +87,8 @@ class CombinedDashboard:
 
         print("[4/8]  투자·한국 데이터 수집")
         inv_raw = self._collect_investment_data()
-        kr_raw  = {**self._fetch_kis_kospi_flows(), **self._fetch_reb_apt_index()}
+        kr_raw  = {**self._fetch_kis_kospi_flows(), **self._fetch_molit_apt_prices()}
+        kr_raw["KR_FOREIGN_USD_NET"] = self._krw_flow_in_usd(kr_raw["KR_FOREIGN_NET"])
         print(f"       수집 완료: {len(inv_raw) + len(kr_raw)}개 시리즈\n")
 
         print("[5/8]  파생 지표 계산 (유동성 파생 + 물가 YoY 변환)")
@@ -346,35 +348,35 @@ class CombinedDashboard:
         return out
 
     @staticmethod
-    def _fetch_reb_apt_index() -> dict[str, pd.Series]:
-        """한국부동산원 R-ONE Open API로 지역별 주간 아파트 매매가격지수를 가져옵니다 (지역당 1회 호출)."""
-        out = {k: pd.Series(dtype=float, name=k) for k in kr_cfg.REB_REGIONS}
-        api_key = os.environ.get("REB_API_KEY", "")
+    def _krw_flow_in_usd(cum_krw: pd.Series) -> pd.Series:
+        """원화 누적 순매수(조원) → 날마다 그날 원/달러 환율로 나눠 다시 누적한 달러 기준(억달러)."""
+        name = "KR_FOREIGN_USD_NET"
+        if cum_krw.empty:
+            return pd.Series(dtype=float, name=name)
+        fx = FredClient(liq_cfg.FRED_API_KEY).fetch_series("DEXKOUS", label="원/달러 환율 (외국인 달러 환산용)")
+        if fx.empty:
+            return pd.Series(dtype=float, name=name)
+        daily_krw = cum_krw.diff().fillna(cum_krw.iloc[0])   # 누적 → 일별 순매수 (조원)
+        # FRED 환율은 며칠 늦게 올라오므로 최근 날짜는 직전 환율로 채움
+        rate = fx.reindex(fx.index.union(daily_krw.index)).ffill().reindex(daily_krw.index)
+        usd = daily_krw * 1e12 / rate / 1e8   # 원 → 달러 → 억달러
+        return usd.cumsum().dropna().rename(name)
+
+    @staticmethod
+    def _fetch_molit_apt_prices() -> dict[str, pd.Series]:
+        """국토부 실거래가로 지역별 월간 84㎡ 환산 중위가격(억원). 과거분은 저장 파일, 최근 몇 달만 재조회."""
+        out = {k: pd.Series(dtype=float, name=k) for k in kr_cfg.MOLIT_REGIONS}
+        api_key = os.environ.get("MOLIT_API_KEY", "")
         if not api_key:
-            print(f"  ❌  {'아파트 매매가격지수':<30} [REB]  REB_API_KEY 없음 → 건너뜀")
+            print(f"  ❌  {'아파트 실거래 중위가격':<30} [MOLIT]  MOLIT_API_KEY 없음 → 건너뜀")
             return out
-        for key, cls_id in kr_cfg.REB_REGIONS.items():
-            for attempt in range(4):   # R-ONE 서버가 가끔 연결을 그냥 끊음 → 점점 길게 쉬고 재시도
-                try:
-                    body = requests.get(
-                        "https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do", timeout=30, params={
-                            "KEY": api_key, "Type": "json", "pIndex": 1, "pSize": 1000,
-                            "STATBL_ID": kr_cfg.REB_APT_TABLE, "DTACYCLE_CD": "WK",
-                            "CLS_ID": cls_id, "START_WRTTIME": kr_cfg.REB_START_WEEK,
-                        },
-                    ).json()
-                    rows = body["SttsApiTblData"][1]["row"]
-                    out[key] = pd.Series(
-                        [float(r["DTA_VAL"]) for r in rows],
-                        index=pd.to_datetime([r["WRTTIME_DESC"] for r in rows]), name=key,
-                    ).sort_index()
-                    print(f"  ✅  {key:<36} [REB]  {len(out[key])} pts")
-                    break
-                except Exception as exc:
-                    if attempt == 3:
-                        print(f"  ❌  {key:<36} [REB]  최종 실패 → {exc}")
-                    time.sleep(10 * (attempt + 1))
-            time.sleep(3)
+        try:
+            df = molit_client.load(api_key)
+            for key in kr_cfg.MOLIT_REGIONS:
+                out[key] = df[key].dropna().rename(key)
+                print(f"  ✅  {key:<36} [MOLIT]  {len(out[key])} pts")
+        except Exception as exc:
+            print(f"  ❌  {'아파트 실거래 중위가격':<30} [MOLIT]  최종 실패 → {exc}")
         return out
 
     @staticmethod

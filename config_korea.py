@@ -24,6 +24,23 @@ def _net(key, name, name_en, category, description, when_up, when_down) -> Indic
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  외국인 자금 유출입 (달러 기준) — 외국인 원화 순매수 ÷ 그날 원/달러 환율 누적
+#  (환율은 FRED DEXKOUS, main_combined.py에서 계산)
+# ══════════════════════════════════════════════════════════════════════
+FOREIGN_USD: list[IndicatorMeta] = [
+    IndicatorMeta(
+        key="KR_FOREIGN_USD_NET", name_ko="외국인 주식 자금 유출입 (달러 기준)",
+        name_en="Foreign Equity Flows in USD (Cumulative)",
+        description="외국인의 매일 순매수 금액(원화)을 그날 원/달러 환율로 나눠 달러로 바꾼 뒤 누적한 값입니다. 원화 기준 누적 순매수는 환율이 크게 움직이면 실제로 외국인이 들여오거나 빼간 달러 규모와 달라지므로, 달러 기준으로 보면 외국인이 원화를 달러로 바꿔 한국 증시를 떠난(또는 들어온) 자금 흐름을 더 정확히 볼 수 있습니다. 외국인 순매도는 그 자체로 달러 수요를 만들어 원화 약세 압력이 됩니다. 채권 투자와 코스닥은 포함하지 않으며, 환율은 미 연준 발표 일별 환율(최근 며칠은 직전 값으로 채움)을 씁니다.",
+        direction="↑외국인 달러 자금 유입", source="한국투자증권 Open API 외국인 순매수 ÷ FRED 원/달러 환율(DEXKOUS)",
+        category=1, unit="억달러", chg_as_point=True,
+        when_up="외국인이 달러를 원화로 바꿔 한국 주식을 사들일 때 상승합니다. 원화 강세 기대가 있으면 주가 수익에 환차익까지 노릴 수 있어 유입이 커지는 경향이 있습니다.",
+        when_down="외국인이 주식을 팔고 받은 원화를 달러로 바꿔 나갈 때 하락합니다. 이 과정 자체가 달러 수요를 늘려 원/달러 환율을 끌어올리고(원화 약세), 원화 약세가 다시 외국인 매도를 부르는 악순환이 생기기도 합니다.",
+    ),
+]
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  ① 투자 주체별 수급
 # ══════════════════════════════════════════════════════════════════════
 INVESTOR_FLOW: list[IndicatorMeta] = [
@@ -117,58 +134,85 @@ KIS_PROGRAM_FIELDS: dict[str, str] = {
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  ② 부동산 — 한국부동산원 R-ONE Open API 주간 아파트 매매가격지수 (REB_API_KEY 필요)
+#  ② 부동산 — 국토교통부 아파트 매매 실거래가 → 84㎡ 환산 중위가격 (MOLIT_API_KEY 필요)
+#  수집·계산은 data/molit_client.py
 # ══════════════════════════════════════════════════════════════════════
-REB_APT_TABLE = "T244183132827305"   # (주) 매매가격지수 (아파트)
-REB_START_WEEK = "202001"            # 2020년 1주차부터
+MOLIT_START = "2020-01-01"
 
-_REB_SOURCE = "한국부동산원 R-ONE (주간 아파트 매매가격지수)"
+_MOLIT_SOURCE = "국토교통부 실거래가 공개시스템 (아파트 매매)"
 
 
 def _apt(key, region, region_en, description) -> IndicatorMeta:
     return IndicatorMeta(
-        key=key, name_ko=region, name_en=f"{region_en} Apartment Sales Price Index",
-        description=description, direction="↑집값 상승", source=_REB_SOURCE, category=2,
-        unit="지수",
+        key=key, name_ko=region, name_en=f"{region_en} Apartment Median Price (84㎡)",
+        description=description, direction="↑집값 상승", source=_MOLIT_SOURCE, category=2,
+        unit="억원", compare_yoy=True,
         when_up="매수 수요가 공급보다 많을 때 오릅니다. 금리 인하·대출 규제 완화, 공급 부족, 전세가 상승(전세→매매 전환) 등이 주된 원인입니다.",
         when_down="고금리·대출 규제 강화로 매수 여력이 줄거나, 입주 물량이 몰리거나, 경기 둔화로 매수 심리가 위축될 때 내립니다.",
     )
 
 
-# 지표 키 → R-ONE 지역 코드(CLS_ID)
-REB_REGIONS: dict[str, str] = {
-    "KR_APT_NATION":  "50001",
-    "KR_APT_SEOUL":   "50008",
-    "KR_APT_GYEONGGI": "50016",
-    "KR_APT_INCHEON": "50124",
-    "KR_APT_LOCAL":   "50003",
+_HOW = ("그 달 신고된 아파트 매매 실거래(해제 건 제외)의 전용 ㎡당 가격 중위값에 84를 곱해, "
+        "'국민평형(전용 84㎡) 한 채'로 환산한 가격입니다. 실제 84㎡ 거래만의 평균과는 다를 수 있고, "
+        "거래 신고 기한(30일) 때문에 최근 1~2개월 값은 이후 신고가 들어오며 조금씩 바뀝니다. "
+        "거래가 적은 달은 어떤 단지가 거래됐느냐에 따라 값이 크게 출렁일 수 있습니다.")
+
+# 지표 키 → 법정동 시군구 코드(LAWD_CD)
+MOLIT_REGIONS: dict[str, str] = {
+    "KR_APT_GANGNAM":  "11680",
+    "KR_APT_SONGPA":   "11710",
+    "KR_APT_YONGSAN":  "11170",
+    "KR_APT_MAPO":     "11440",
+    "KR_APT_SEONGDONG": "11200",
+    "KR_APT_GANGDONG": "11740",
+    "KR_APT_NOWON":    "11350",
+    "KR_APT_DOBONG":   "11320",
+    "KR_APT_BUNDANG":  "41135",
+    "KR_APT_GWACHEON": "41290",
+    "KR_APT_HANAM":    "41450",
+    "KR_APT_GWANGMYEONG": "41210",
+    "KR_APT_YEONGTONG": "41117",
+    "KR_APT_SUJI":     "41465",
+    "KR_APT_DONGTAN":  "41597",   # 화성시 동탄구 (2026년 구 신설 — 과거 거래도 이 코드로 조회됨)
+    "KR_APT_ILSANDONG": "41285",
 }
 
-APT_PRICE: list[IndicatorMeta] = [
-    _apt("KR_APT_NATION", "전국", "Nationwide",
-         "전국 아파트 매매가격의 주간 변화를 지수로 나타낸 값입니다(기준시점=100). 한국부동산원이 매주 표본 아파트의 시세를 조사해 매주 목요일 발표하며, 선의 높이는 기준시점 대비 가격 수준, 기울기는 상승·하락 속도를 뜻합니다."),
-    _apt("KR_APT_SEOUL", "서울", "Seoul",
-         "서울 아파트 매매가격지수입니다. 국내 집값 흐름을 가장 먼저 이끄는 지역으로, 금리·대출 정책 변화에 가장 민감하게 반응합니다."),
-    _apt("KR_APT_GYEONGGI", "경기", "Gyeonggi",
-         "경기 아파트 매매가격지수입니다. 서울 집값이 오르면 상대적으로 저렴한 경기로 수요가 번지는 '갭 메우기'가 시차를 두고 나타나는 경우가 많습니다."),
-    _apt("KR_APT_INCHEON", "인천", "Incheon",
-         "인천 아파트 매매가격지수입니다. 수도권 중 입주 물량 영향이 큰 지역이라 공급이 몰리는 시기에 상대적으로 약한 흐름을 보이기도 합니다."),
-    _apt("KR_APT_LOCAL", "지방", "Non-Capital Region",
-         "수도권(서울·경기·인천)을 제외한 지방 아파트 매매가격지수입니다. 수도권과의 격차가 벌어지는지 좁혀지는지를 보면 지역 간 양극화 정도를 알 수 있습니다."),
+SEOUL_APT: list[IndicatorMeta] = [
+    _apt("KR_APT_GANGNAM", "강남", "Gangnam", "서울 강남구. " + _HOW),
+    _apt("KR_APT_SONGPA", "송파", "Songpa", "서울 송파구."),
+    _apt("KR_APT_YONGSAN", "용산", "Yongsan", "서울 용산구. 거래량이 적어 월별 변동이 큰 편입니다."),
+    _apt("KR_APT_MAPO", "마포", "Mapo", "서울 마포구."),
+    _apt("KR_APT_SEONGDONG", "성동", "Seongdong", "서울 성동구."),
+    _apt("KR_APT_GANGDONG", "강동", "Gangdong", "서울 강동구."),
+    _apt("KR_APT_NOWON", "노원", "Nowon", "서울 노원구. 중저가 아파트가 밀집한 지역으로, 금리·대출 규제에 민감합니다."),
+    _apt("KR_APT_DOBONG", "도봉", "Dobong", "서울 도봉구."),
+]
+
+GYEONGGI_APT: list[IndicatorMeta] = [
+    _apt("KR_APT_BUNDANG", "분당", "Bundang", "성남시 분당구. " + _HOW),
+    _apt("KR_APT_GWACHEON", "과천", "Gwacheon", "과천시. 거래량이 매우 적어 월별 변동이 큰 편입니다."),
+    _apt("KR_APT_HANAM", "하남", "Hanam", "하남시."),
+    _apt("KR_APT_GWANGMYEONG", "광명", "Gwangmyeong", "광명시."),
+    _apt("KR_APT_YEONGTONG", "수원 영통", "Yeongtong", "수원시 영통구."),
+    _apt("KR_APT_SUJI", "용인 수지", "Suji", "용인시 수지구."),
+    _apt("KR_APT_DONGTAN", "동탄", "Dongtan", "화성시 동탄구."),
+    _apt("KR_APT_ILSANDONG", "일산동구", "Ilsandong", "고양시 일산동구."),
 ]
 
 
 CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
     1: (
-        "① 수급",
-        "투자 주체별·기관 세부 누적 순매수와 선물 차익거래",
-        INVESTOR_FLOW + INST_DETAIL + PROGRAM_ARB,
+        "① 주식 수급",
+        "외국인 달러 기준 자금 유출입, 투자 주체별·기관 세부 누적 순매수와 선물 차익거래",
+        FOREIGN_USD + INVESTOR_FLOW + INST_DETAIL + PROGRAM_ARB,
     ),
     2: (
-        "② 부동산",
-        "전국·서울·경기·인천·지방 아파트 매매가격지수 (주간)",
-        APT_PRICE,
+        "② 부동산 가격",
+        "서울 주요 구·경기 주요 지역 아파트 실거래 중위가격 (84㎡ 환산, 월간)",
+        SEOUL_APT + GYEONGGI_APT,
     ),
 }
 
-ALL_INDICATORS: list[IndicatorMeta] = INVESTOR_FLOW + INST_DETAIL + PROGRAM_ARB + APT_PRICE
+ALL_INDICATORS: list[IndicatorMeta] = (
+    FOREIGN_USD + INVESTOR_FLOW + INST_DETAIL + PROGRAM_ARB + SEOUL_APT + GYEONGGI_APT
+)
