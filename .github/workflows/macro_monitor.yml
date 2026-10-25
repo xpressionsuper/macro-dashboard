@@ -41,6 +41,7 @@ jobs:
           KIS_APP_KEY:      ${{ secrets.KIS_APP_KEY }}
           KIS_APP_SECRET:   ${{ secrets.KIS_APP_SECRET }}
           MOLIT_API_KEY:    ${{ secrets.MOLIT_API_KEY }}
+          ECOS_API_KEY:     ${{ secrets.ECOS_API_KEY }}
           TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python main_combined.py

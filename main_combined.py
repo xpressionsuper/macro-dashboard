@@ -88,7 +88,7 @@ class CombinedDashboard:
         print("[4/8]  투자·한국 데이터 수집")
         inv_raw = self._collect_investment_data()
         kr_raw  = {**self._fetch_kis_kospi_flows(), **self._fetch_molit_apt_prices()}
-        kr_raw["KR_FOREIGN_USD_NET"] = self._krw_flow_in_usd(kr_raw["KR_FOREIGN_NET"])
+        kr_raw.update(self._fetch_ecos_bop_flows())
         print(f"       수집 완료: {len(inv_raw) + len(kr_raw)}개 시리즈\n")
 
         print("[5/8]  파생 지표 계산 (유동성 파생 + 물가 YoY 변환)")
@@ -348,19 +348,28 @@ class CombinedDashboard:
         return out
 
     @staticmethod
-    def _krw_flow_in_usd(cum_krw: pd.Series) -> pd.Series:
-        """원화 누적 순매수(조원) → 날마다 그날 원/달러 환율로 나눠 다시 누적한 달러 기준(억달러)."""
-        name = "KR_FOREIGN_USD_NET"
-        if cum_krw.empty:
-            return pd.Series(dtype=float, name=name)
-        fx = FredClient(liq_cfg.FRED_API_KEY).fetch_series("DEXKOUS", label="원/달러 환율 (외국인 달러 환산용)")
-        if fx.empty:
-            return pd.Series(dtype=float, name=name)
-        daily_krw = cum_krw.diff().fillna(cum_krw.iloc[0])   # 누적 → 일별 순매수 (조원)
-        # FRED 환율은 며칠 늦게 올라오므로 최근 날짜는 직전 환율로 채움
-        rate = fx.reindex(fx.index.union(daily_krw.index)).ffill().reindex(daily_krw.index)
-        usd = daily_krw * 1e12 / rate / 1e8   # 원 → 달러 → 억달러
-        return usd.cumsum().dropna().rename(name)
+    def _fetch_ecos_bop_flows() -> dict[str, pd.Series]:
+        """한국은행 ECOS 국제수지 증권투자(부채) 월별 순유출입(백만달러) → 2020년부터 누적(억달러)."""
+        out = {k: pd.Series(dtype=float, name=k) for k in kr_cfg.ECOS_BOP_ITEMS}
+        api_key = os.environ.get("ECOS_API_KEY", "")
+        if not api_key:
+            print(f"  ❌  {'외국인 증권투자자금':<30} [ECOS]  ECOS_API_KEY 없음 → 건너뜀")
+            return out
+        end = datetime.now().strftime("%Y%m")
+        for key, item in kr_cfg.ECOS_BOP_ITEMS.items():
+            try:
+                url = "/".join(["https://ecos.bok.or.kr/api/StatisticSearch", api_key, "json", "kr", "1", "1000",
+                                kr_cfg.ECOS_BOP_TABLE, "M", kr_cfg.ECOS_START_MONTH, end, item])
+                rows = requests.get(url, timeout=30).json()["StatisticSearch"]["row"]
+                monthly = pd.Series(
+                    [float(r["DATA_VALUE"]) for r in rows],
+                    index=pd.to_datetime([r["TIME"] + "01" for r in rows], format="%Y%m%d"),
+                ).sort_index()
+                out[key] = (monthly.cumsum() / 100).rename(key)   # 백만달러 → 억달러
+                print(f"  ✅  {key:<36} [ECOS]  {len(monthly)} pts")
+            except Exception as exc:
+                print(f"  ❌  {key:<36} [ECOS]  최종 실패 → {exc}")
+        return out
 
     @staticmethod
     def _fetch_molit_apt_prices() -> dict[str, pd.Series]:

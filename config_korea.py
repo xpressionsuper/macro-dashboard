@@ -24,19 +24,45 @@ def _net(key, name, name_en, category, description, when_up, when_down) -> Indic
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  외국인 자금 유출입 (달러 기준) — 외국인 원화 순매수 ÷ 그날 원/달러 환율 누적
-#  (환율은 FRED DEXKOUS, main_combined.py에서 계산)
+#  외국인 증권투자자금 유출입 (달러) — 한국은행 ECOS 국제수지(301Y013) 금융계정
+#  증권투자(부채) 월별, 2020년 1월부터 누적 (ECOS_API_KEY 필요)
 # ══════════════════════════════════════════════════════════════════════
+ECOS_BOP_TABLE = "301Y013"
+ECOS_START_MONTH = "202001"
+
+_BOP_SOURCE = "한국은행 ECOS 국제수지 (금융계정 · 증권투자 부채)"
+_BOP_UP = ("외국인이 달러를 원화로 바꿔 한국 주식·채권을 사들일 때 상승합니다. 원화 강세 기대, 한국 기업 이익 개선, "
+           "글로벌 위험선호 국면, 세계국채지수(WGBI) 편입 같은 채권 수요 요인이 대표적입니다.")
+_BOP_DOWN = ("외국인이 한국 주식·채권을 팔고 받은 원화를 달러로 바꿔 나갈 때 하락합니다. 이 과정 자체가 달러 수요를 늘려 "
+             "원/달러 환율을 끌어올리고(원화 약세), 원화 약세가 다시 외국인 매도를 부르는 악순환이 생기기도 합니다.")
+
+
+def _bop(key, name, name_en, description) -> IndicatorMeta:
+    return IndicatorMeta(
+        key=key, name_ko=name, name_en=f"Foreign Portfolio Investment Flows — {name_en} (Cumulative)",
+        description=description, direction="↑외국인 자금 유입", source=_BOP_SOURCE, category=1,
+        unit="억달러", chg_as_point=True, when_up=_BOP_UP, when_down=_BOP_DOWN,
+    )
+
+
+# 지표 키 → ECOS 국제수지 항목 코드 (백만달러, 월별 순유출입)
+ECOS_BOP_ITEMS: dict[str, str] = {
+    "KR_BOP_TOTAL_NET":  "BOPF22000000",   # 증권투자(부채) 합계
+    "KR_BOP_EQUITY_NET": "BOPF22100000",   # 주식(부채)
+    "KR_BOP_DEBT_NET":   "BOPF22200000",   # 부채성증권(부채) = 채권 등
+}
+
 FOREIGN_USD: list[IndicatorMeta] = [
-    IndicatorMeta(
-        key="KR_FOREIGN_USD_NET", name_ko="외국인 주식 자금 유출입 (달러 기준)",
-        name_en="Foreign Equity Flows in USD (Cumulative)",
-        description="외국인의 매일 순매수 금액(원화)을 그날 원/달러 환율로 나눠 달러로 바꾼 뒤 누적한 값입니다. 원화 기준 누적 순매수는 환율이 크게 움직이면 실제로 외국인이 들여오거나 빼간 달러 규모와 달라지므로, 달러 기준으로 보면 외국인이 원화를 달러로 바꿔 한국 증시를 떠난(또는 들어온) 자금 흐름을 더 정확히 볼 수 있습니다. 외국인 순매도는 그 자체로 달러 수요를 만들어 원화 약세 압력이 됩니다. 채권 투자와 코스닥은 포함하지 않으며, 환율은 미 연준 발표 일별 환율(최근 며칠은 직전 값으로 채움)을 씁니다.",
-        direction="↑외국인 달러 자금 유입", source="한국투자증권 Open API 외국인 순매수 ÷ FRED 원/달러 환율(DEXKOUS)",
-        category=1, unit="억달러", chg_as_point=True,
-        when_up="외국인이 달러를 원화로 바꿔 한국 주식을 사들일 때 상승합니다. 원화 강세 기대가 있으면 주가 수익에 환차익까지 노릴 수 있어 유입이 커지는 경향이 있습니다.",
-        when_down="외국인이 주식을 팔고 받은 원화를 달러로 바꿔 나갈 때 하락합니다. 이 과정 자체가 달러 수요를 늘려 원/달러 환율을 끌어올리고(원화 약세), 원화 약세가 다시 외국인 매도를 부르는 악순환이 생기기도 합니다.",
-    ),
+    _bop("KR_BOP_TOTAL_NET", "합계", "Total",
+         "한국은행 국제수지 통계의 '증권투자(부채)', 즉 외국인이 국내 주식·채권에 투자한 자금의 월별 순유출입(달러)을 "
+         "2020년 1월부터 누적한 값입니다. 위로 가면 외국인 달러 자금이 들어오는 중, 아래로 가면 원화를 달러로 바꿔 빠져나가는 중입니다. "
+         "한국은행이 매달 보도자료(국제금융·외환시장 동향)로 내는 '외국인 증권투자자금' 속보치와는 집계 기준이 달라 금액이 다를 수 있으며, "
+         "국제수지 발표 일정상 약 2개월 늦게 반영됩니다."),
+    _bop("KR_BOP_EQUITY_NET", "주식", "Equity",
+         "외국인의 국내 주식 투자 자금 순유출입 누적입니다. 원화 기준 외국인 순매수와 방향은 비슷하지만, 환율 변동을 반영한 실제 달러 규모입니다."),
+    _bop("KR_BOP_DEBT_NET", "채권", "Debt Securities",
+         "외국인의 국내 채권(부채성증권) 투자 자금 순유출입 누적입니다. 주식과 달리 각국 중앙은행·국부펀드 등 장기 투자자 비중이 커서, "
+         "주식에서 돈이 빠질 때도 채권으로는 들어오는 경우가 많습니다."),
 ]
 
 

@@ -43,6 +43,8 @@ COMBINED_CHARTS: dict[str, list[str]] = {
     "KR_FOREIGN_NET": ["KR_INST_NET", "KR_INDIV_NET", "KR_CORP_NET"],
     "KR_PENSION_NET": ["KR_SECURITIES_NET", "KR_TRUST_NET", "KR_PE_NET",
                        "KR_INSURANCE_NET", "KR_BANK_NET", "KR_OTHER_FIN_NET"],
+    # 한국 외국인 증권투자자금: 합계·주식·채권 한 차트
+    "KR_BOP_TOTAL_NET": ["KR_BOP_EQUITY_NET", "KR_BOP_DEBT_NET"],
     # 한국 부동산: 서울 8개 구 한 차트 / 경기 8개 지역 한 차트
     "KR_APT_GANGNAM": ["KR_APT_SONGPA", "KR_APT_YONGSAN", "KR_APT_MAPO", "KR_APT_SEONGDONG",
                        "KR_APT_GANGDONG", "KR_APT_NOWON", "KR_APT_DOBONG"],
@@ -53,12 +55,13 @@ COMBINED_CHARTS: dict[str, list[str]] = {
 SLOT_TITLES: dict[str, str] = {
     "KR_FOREIGN_NET": "외국인 누적 순매수",
     "KR_PENSION_NET": "기관 세부 수급",
+    "KR_BOP_TOTAL_NET": "외국인 증권투자자금 유출입 (누적, 달러)",
     "KR_APT_GANGNAM": "서울 아파트 가격 (84㎡ 환산)",
     "KR_APT_BUNDANG": "경기 아파트 가격 (84㎡ 환산)",
 }
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
 SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"} \
-    | set(COMBINED_CHARTS["KR_FOREIGN_NET"]) | set(COMBINED_CHARTS["KR_PENSION_NET"])     | set(COMBINED_CHARTS["KR_APT_GANGNAM"]) | set(COMBINED_CHARTS["KR_APT_BUNDANG"])
+    | set(COMBINED_CHARTS["KR_FOREIGN_NET"]) | set(COMBINED_CHARTS["KR_PENSION_NET"])     | set(COMBINED_CHARTS["KR_APT_GANGNAM"]) | set(COMBINED_CHARTS["KR_APT_BUNDANG"])     | set(COMBINED_CHARTS["KR_BOP_TOTAL_NET"])
 
 # y축 눈금 상한 고정 (0 ~ 지정값) — 없는 지표는 자동 스케일 유지
 Y_MAX_OVERRIDE: dict[str, float] = {
