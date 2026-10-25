@@ -453,6 +453,10 @@ class HtmlExporter:
     @classmethod
     def _build_row_desc(cls, r: IndicatorResult, is_newest: bool = False) -> str:
         latest_str = cls._fmt_value(r)
+        # 월간 통계(국제수지)는 날짜가 매달 1일로 붙어 '8월 1일 하루치'로 오해되므로 월로 표시
+        date_str = r.latest_date
+        if r.key.startswith("KR_BOP_") and r.latest_date[:4].isdigit():
+            date_str = f"{r.latest_date[:4]}년 {int(r.latest_date[5:7])}월"
 
         chg_badge = ""
         chg = cls._fmt_chg(r)
@@ -479,7 +483,7 @@ class HtmlExporter:
   </div>
   <div class="row-head">
     <span class="row-val">{latest_str}</span>
-    <span class="row-date">기준일: {r.latest_date}</span>
+    <span class="row-date">기준일: {date_str}</span>
     {released_str}
     {chg_badge}
   </div>

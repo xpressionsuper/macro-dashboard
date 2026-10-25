@@ -60,8 +60,10 @@ SLOT_TITLES: dict[str, str] = {
     "KR_APT_BUNDANG": "경기 아파트 가격 (84㎡ 환산)",
 }
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
-SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"} \
-    | set(COMBINED_CHARTS["KR_FOREIGN_NET"]) | set(COMBINED_CHARTS["KR_PENSION_NET"])     | set(COMBINED_CHARTS["KR_APT_GANGNAM"]) | set(COMBINED_CHARTS["KR_APT_BUNDANG"])     | set(COMBINED_CHARTS["KR_BOP_TOTAL_NET"])
+SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"}.union(
+    *(COMBINED_CHARTS[k] for k in ("KR_FOREIGN_NET", "KR_PENSION_NET", "KR_APT_GANGNAM",
+                                   "KR_APT_BUNDANG", "KR_BOP_TOTAL_NET"))
+)
 
 # y축 눈금 상한 고정 (0 ~ 지정값) — 없는 지표는 자동 스케일 유지
 Y_MAX_OVERRIDE: dict[str, float] = {
@@ -180,7 +182,7 @@ class ChartBuilder:
                     fill="none",
                     hovertemplate=(
                         f"<b>{r.name_ko}</b><br>"
-                        f"%{{x|%Y-%m-%d}}<br>"
+                        f"%{{x|{'%Y년 %m월' if r.key.startswith('KR_BOP_') else '%Y-%m-%d'}}}<br>"
                         f"%{{y:.2f}} {unit}<extra></extra>"
                     ),
                 ),
