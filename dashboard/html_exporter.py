@@ -427,10 +427,11 @@ class HtmlExporter:
         # 한국 수급 묶음 차트: 첫 지표 설명만 보이면 나머지 주체 설명이 사라지므로 전부 나열
         head = slot_results[0]
         if len(slot_results) > 1 and head.key.startswith("KR_"):
-            return replace(head, name_ko=SLOT_TITLES.get(head.key, head.name_ko), description="<br><br>".join(
-                f"<b>{r.name_ko.removesuffix(' 누적 순매수')}</b> — {r.description}"
-                for r in slot_results
-            ))
+            described = [r for r in slot_results if r.description]
+            text = described[0].description if len(described) == 1 else "<br><br>".join(
+                f"<b>{r.name_ko.removesuffix(' 누적 순매수')}</b> — {r.description}" for r in described
+            )
+            return replace(head, name_ko=SLOT_TITLES.get(head.key, head.name_ko), description=text)
         return head
 
     @staticmethod

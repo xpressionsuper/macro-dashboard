@@ -204,25 +204,25 @@ MOLIT_REGIONS: dict[str, str] = {
 }
 
 SEOUL_APT: list[IndicatorMeta] = [
-    _apt("KR_APT_GANGNAM", "강남", "Gangnam", "서울 강남구. " + _HOW),
-    _apt("KR_APT_SONGPA", "송파", "Songpa", "서울 송파구."),
-    _apt("KR_APT_YONGSAN", "용산", "Yongsan", "서울 용산구. 거래량이 적어 월별 변동이 큰 편입니다."),
-    _apt("KR_APT_MAPO", "마포", "Mapo", "서울 마포구."),
-    _apt("KR_APT_SEONGDONG", "성동", "Seongdong", "서울 성동구."),
-    _apt("KR_APT_GANGDONG", "강동", "Gangdong", "서울 강동구."),
-    _apt("KR_APT_NOWON", "노원", "Nowon", "서울 노원구. 중저가 아파트가 밀집한 지역으로, 금리·대출 규제에 민감합니다."),
-    _apt("KR_APT_DOBONG", "도봉", "Dobong", "서울 도봉구."),
+    _apt("KR_APT_GANGNAM", "강남", "Gangnam", _HOW),
+    _apt("KR_APT_SONGPA", "송파", "Songpa", ""),
+    _apt("KR_APT_YONGSAN", "용산", "Yongsan", ""),
+    _apt("KR_APT_MAPO", "마포", "Mapo", ""),
+    _apt("KR_APT_SEONGDONG", "성동", "Seongdong", ""),
+    _apt("KR_APT_GANGDONG", "강동", "Gangdong", ""),
+    _apt("KR_APT_NOWON", "노원", "Nowon", ""),
+    _apt("KR_APT_DOBONG", "도봉", "Dobong", ""),
 ]
 
 GYEONGGI_APT: list[IndicatorMeta] = [
-    _apt("KR_APT_BUNDANG", "분당", "Bundang", "성남시 분당구. " + _HOW),
-    _apt("KR_APT_GWACHEON", "과천", "Gwacheon", "과천시. 거래량이 매우 적어 월별 변동이 큰 편입니다."),
-    _apt("KR_APT_HANAM", "하남", "Hanam", "하남시."),
-    _apt("KR_APT_GWANGMYEONG", "광명", "Gwangmyeong", "광명시."),
-    _apt("KR_APT_YEONGTONG", "수원 영통", "Yeongtong", "수원시 영통구."),
-    _apt("KR_APT_SUJI", "용인 수지", "Suji", "용인시 수지구."),
-    _apt("KR_APT_DONGTAN", "동탄", "Dongtan", "화성시 동탄구."),
-    _apt("KR_APT_ILSANDONG", "일산동구", "Ilsandong", "고양시 일산동구."),
+    _apt("KR_APT_BUNDANG", "분당", "Bundang", _HOW),
+    _apt("KR_APT_GWACHEON", "과천", "Gwacheon", ""),
+    _apt("KR_APT_HANAM", "하남", "Hanam", ""),
+    _apt("KR_APT_GWANGMYEONG", "광명", "Gwangmyeong", ""),
+    _apt("KR_APT_YEONGTONG", "수원 영통", "Yeongtong", ""),
+    _apt("KR_APT_SUJI", "용인 수지", "Suji", ""),
+    _apt("KR_APT_DONGTAN", "동탄", "Dongtan", ""),
+    _apt("KR_APT_ILSANDONG", "일산동구", "Ilsandong", ""),
 ]
 
 
