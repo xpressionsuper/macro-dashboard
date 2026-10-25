@@ -127,6 +127,14 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
 .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
 .copy-btn.done  { color: var(--up); border-color: var(--up); }
 .copy-btn.fail  { color: var(--down); border-color: var(--down); }
+#img-overlay { display: none; position: fixed; inset: 0; z-index: 100; background: var(--bg);
+               flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; }
+#img-overlay.open { display: flex; }
+#img-overlay img { max-width: 100%; max-height: 70vh; border-radius: 6px;
+                   -webkit-touch-callout: default; user-select: auto; }
+.ov-hint  { color: #fff; font-size: 15px; font-weight: 600; }
+.ov-close { color: var(--muted); font-size: 14px; padding: 8px 16px; border: 1px solid var(--border);
+            border-radius: 999px; }
 .row-chart { flex: 0 1 580px; min-width: 0; }
 .row-chart .chart-wrap { background: transparent; border: none; padding: 0; }
 
@@ -181,25 +189,13 @@ _JS_NAV = """
 
   // 지표별 복사 버튼 — 차트를 PNG 이미지로.
   // PC: 클립보드에 바로 넣음 / 휴대폰: 모바일 브라우저는 이미지 클립보드 쓰기가 불안정해서
-  //     OS 공유창을 띄움 (거기서 '복사'·'이미지 저장' 선택)
-  var isPhone = window.matchMedia('(pointer: coarse)').matches && !!navigator.canShare;
+  //     이미지를 화면에 띄우고, 길게 눌러 브라우저 기본 메뉴('이미지 복사'·'저장')로 복사하게 함
+  var isPhone = window.matchMedia('(pointer: coarse)').matches;
   var chartOf = function (btn) { return btn.closest('.indicator-row').querySelector('.js-plotly-plot'); };
-  var pngOf = function (chart) {
-    // 차트당 한 번만 렌더링해 재사용 (공유창은 탭 직후에만 열 수 있어 미리 만들어 둠)
-    if (!chart._png) {
-      chart._png = Plotly.toImage(chart, { format: 'png', scale: 2 })
-        .then(function (url) { return fetch(url); })
-        .then(function (r) { return r.blob(); })
-        .then(function (b) { chart._file = new File([b], 'chart.png', { type: 'image/png' }); return b; });
-    }
-    return chart._png;
-  };
-  if (isPhone) {
-    document.addEventListener('pointerdown', function (e) {
-      var btn = e.target.closest('.copy-btn');
-      if (btn && chartOf(btn)) pngOf(chartOf(btn));
-    });
-  }
+  var overlay = document.getElementById('img-overlay');
+  overlay.addEventListener('click', function (e) {
+    if (e.target !== overlay.querySelector('img')) overlay.classList.remove('open');
+  });
 
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('.copy-btn');
@@ -212,18 +208,10 @@ _JS_NAV = """
     if (!chart) return flash('Not supported', 'fail');
 
     if (isPhone) {
-      var share = function () {
-        return navigator.share({ files: [chart._file] }).then(
-          function () { flash('Shared ✓', 'done'); },
-          function (err) {
-            if (err.name === 'AbortError') return;   // 사용자가 공유창을 닫음
-            // 이미지 준비가 늦어 탭 효력이 끝난 경우 — 이미지는 이제 준비됐으니 다시 탭하면 바로 열림
-            flash(err.name === 'NotAllowedError' ? 'Tap again' : 'Failed', 'fail');
-          }
-        );
-      };
-      if (chart._file) return share();
-      return pngOf(chart).then(share, function () { flash('Failed', 'fail'); });
+      return Plotly.toImage(chart, { format: 'png', scale: 2 }).then(function (url) {
+        overlay.querySelector('img').src = url;
+        overlay.classList.add('open');
+      }, function () { flash('Failed', 'fail'); });
     }
 
     if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) {
@@ -302,6 +290,11 @@ class HtmlExporter:
     <main class="main">
       {main}
     </main>
+  </div>
+  <div id="img-overlay">
+    <div class="ov-hint">이미지를 길게 눌러 복사·저장하세요</div>
+    <img alt="차트 이미지">
+    <div class="ov-close">✕ 닫기</div>
   </div>
   {_JS_NAV}
 </body>
