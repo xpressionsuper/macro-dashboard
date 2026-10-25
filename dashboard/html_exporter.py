@@ -179,25 +179,40 @@ _JS_NAV = """
 
   sections.forEach(function (s) { observer.observe(s); });
 
-  // 지표별 복사 버튼 — clipboard API가 막힌 환경(로컬 file:// 등)은 textarea로 대체
+  // 지표별 복사 버튼 — 텍스트 + 차트 PNG를 함께 클립보드에 넣음.
+  // 이미지 복사가 안 되는 환경(구형 브라우저, 로컬 file:// 등)은 텍스트만 복사
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('.copy-btn');
     if (!btn) return;
     var text = btn.dataset.copy;
     var done = function () {
-      btn.textContent = '복사됨 ✓'; btn.classList.add('done');
-      setTimeout(function () { btn.textContent = '📋 복사'; btn.classList.remove('done'); }, 1500);
+      btn.textContent = 'Copied ✓'; btn.classList.add('done');
+      setTimeout(function () { btn.textContent = '📋 Copy'; btn.classList.remove('done'); }, 1500);
     };
     var fallback = function () {
       var ta = document.createElement('textarea');
       ta.value = text; document.body.appendChild(ta); ta.select();
       document.execCommand('copy'); document.body.removeChild(ta); done();
     };
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).then(done, fallback);
-    } else {
-      fallback();
+    var copyText = function () {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else {
+        fallback();
+      }
+    };
+    var chart = btn.closest('.indicator-row').querySelector('.js-plotly-plot');
+    if (!chart || !window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) {
+      return copyText();
     }
+    // Safari는 클릭 직후 동기적으로 write를 불러야 하므로 이미지는 Promise로 넘김
+    var png = Plotly.toImage(chart, { format: 'png', scale: 2 })
+      .then(function (url) { return fetch(url); })
+      .then(function (r) { return r.blob(); });
+    navigator.clipboard.write([new ClipboardItem({
+      'image/png': png,
+      'text/plain': new Blob([text], { type: 'text/plain' }),
+    })]).then(done, copyText);
   });
 })();
 </script>
@@ -438,7 +453,7 @@ class HtmlExporter:
             chg_cls = "up" if r.chg_disp >= 0 else "down"
             chg_badge = f'<span class="row-chg {chg_cls}">{chg}</span>'
         copy_btn = (
-            f'<button class="copy-btn" type="button" data-copy="{html.escape(copy_text)}">📋 복사</button>'
+            f'<button class="copy-btn" type="button" data-copy="{html.escape(copy_text)}">📋 Copy</button>'
             if copy_text else ""
         )
 
