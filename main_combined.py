@@ -354,7 +354,7 @@ class CombinedDashboard:
             print(f"  ❌  {'아파트 매매가격지수':<30} [REB]  REB_API_KEY 없음 → 건너뜀")
             return out
         for key, cls_id in kr_cfg.REB_REGIONS.items():
-            for attempt in range(3):   # R-ONE 서버가 가끔 연결을 그냥 끊음 → 잠깐 쉬고 재시도
+            for attempt in range(4):   # R-ONE 서버가 가끔 연결을 그냥 끊음 → 점점 길게 쉬고 재시도
                 try:
                     body = requests.get(
                         "https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do", timeout=30, params={
@@ -371,10 +371,10 @@ class CombinedDashboard:
                     print(f"  ✅  {key:<36} [REB]  {len(out[key])} pts")
                     break
                 except Exception as exc:
-                    if attempt == 2:
+                    if attempt == 3:
                         print(f"  ❌  {key:<36} [REB]  최종 실패 → {exc}")
-                    time.sleep(3)
-            time.sleep(1)
+                    time.sleep(10 * (attempt + 1))
+            time.sleep(3)
         return out
 
     @staticmethod
