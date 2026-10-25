@@ -354,22 +354,27 @@ class CombinedDashboard:
             print(f"  ❌  {'아파트 매매가격지수':<30} [REB]  REB_API_KEY 없음 → 건너뜀")
             return out
         for key, cls_id in kr_cfg.REB_REGIONS.items():
-            try:
-                body = requests.get(
-                    "https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do", timeout=30, params={
-                        "KEY": api_key, "Type": "json", "pIndex": 1, "pSize": 1000,
-                        "STATBL_ID": kr_cfg.REB_APT_TABLE, "DTACYCLE_CD": "WK",
-                        "CLS_ID": cls_id, "START_WRTTIME": kr_cfg.REB_START_WEEK,
-                    },
-                ).json()
-                rows = body["SttsApiTblData"][1]["row"]
-                out[key] = pd.Series(
-                    [float(r["DTA_VAL"]) for r in rows],
-                    index=pd.to_datetime([r["WRTTIME_DESC"] for r in rows]), name=key,
-                ).sort_index()
-                print(f"  ✅  {key:<36} [REB]  {len(out[key])} pts")
-            except Exception as exc:
-                print(f"  ❌  {key:<36} [REB]  최종 실패 → {exc}")
+            for attempt in range(3):   # R-ONE 서버가 가끔 연결을 그냥 끊음 → 잠깐 쉬고 재시도
+                try:
+                    body = requests.get(
+                        "https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do", timeout=30, params={
+                            "KEY": api_key, "Type": "json", "pIndex": 1, "pSize": 1000,
+                            "STATBL_ID": kr_cfg.REB_APT_TABLE, "DTACYCLE_CD": "WK",
+                            "CLS_ID": cls_id, "START_WRTTIME": kr_cfg.REB_START_WEEK,
+                        },
+                    ).json()
+                    rows = body["SttsApiTblData"][1]["row"]
+                    out[key] = pd.Series(
+                        [float(r["DTA_VAL"]) for r in rows],
+                        index=pd.to_datetime([r["WRTTIME_DESC"] for r in rows]), name=key,
+                    ).sort_index()
+                    print(f"  ✅  {key:<36} [REB]  {len(out[key])} pts")
+                    break
+                except Exception as exc:
+                    if attempt == 2:
+                        print(f"  ❌  {key:<36} [REB]  최종 실패 → {exc}")
+                    time.sleep(3)
+            time.sleep(1)
         return out
 
     @staticmethod
