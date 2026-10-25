@@ -21,6 +21,7 @@ from pathlib import Path
 import plotly.graph_objects as go
 import plotly.io as pio
 
+from dashboard.chart_builder import SLOT_TITLES
 from indicators.base import IndicatorResult
 
 
@@ -426,7 +427,7 @@ class HtmlExporter:
         # 한국 수급 묶음 차트: 첫 지표 설명만 보이면 나머지 주체 설명이 사라지므로 전부 나열
         head = slot_results[0]
         if len(slot_results) > 1 and head.key.startswith("KR_"):
-            return replace(head, description="<br><br>".join(
+            return replace(head, name_ko=SLOT_TITLES.get(head.key, head.name_ko), description="<br><br>".join(
                 f"<b>{r.name_ko.removesuffix(' 누적 순매수')}</b> — {r.description}"
                 for r in slot_results
             ))

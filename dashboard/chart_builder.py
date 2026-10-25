@@ -43,15 +43,18 @@ COMBINED_CHARTS: dict[str, list[str]] = {
     "KR_FOREIGN_NET": ["KR_INST_NET", "KR_INDIV_NET", "KR_CORP_NET"],
     "KR_PENSION_NET": ["KR_SECURITIES_NET", "KR_TRUST_NET", "KR_PE_NET",
                        "KR_INSURANCE_NET", "KR_BANK_NET", "KR_OTHER_FIN_NET"],
+    # 한국 부동산: 지역별 아파트 매매가격지수 한 차트
+    "KR_APT_NATION": ["KR_APT_SEOUL", "KR_APT_GYEONGGI", "KR_APT_INCHEON", "KR_APT_LOCAL"],
 }
 # 지표가 많아 이름을 이어 붙이면 너무 긴 차트의 제목
 SLOT_TITLES: dict[str, str] = {
     "KR_FOREIGN_NET": "외국인 누적 순매수",
     "KR_PENSION_NET": "기관 세부 수급",
+    "KR_APT_NATION":  "아파트 매매가격지수",
 }
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
 SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"} \
-    | set(COMBINED_CHARTS["KR_FOREIGN_NET"]) | set(COMBINED_CHARTS["KR_PENSION_NET"])
+    | set(COMBINED_CHARTS["KR_FOREIGN_NET"]) | set(COMBINED_CHARTS["KR_PENSION_NET"])     | set(COMBINED_CHARTS["KR_APT_NATION"])
 
 # y축 눈금 상한 고정 (0 ~ 지정값) — 없는 지표는 자동 스케일 유지
 Y_MAX_OVERRIDE: dict[str, float] = {
@@ -132,7 +135,7 @@ class ChartBuilder:
         for slot in chart_slots:
             fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
             self._add_slot_traces(fig, slot, 1)
-            self._add_benchmark_overlays(fig, 1, korea=slot[0].key.startswith("KR_"))
+            self._add_benchmark_overlays(fig, 1, self._benchmarks_for(slot[0].key))
             title = SLOT_TITLES.get(slot[0].key) or " & ".join(r.name_ko for r in slot)
             self._apply_layout(fig, height=330, title=title)
             figures.append((fig, slot))
@@ -197,7 +200,7 @@ class ChartBuilder:
                     row=row, col=1,
                 )
             # NFCI·누적 순매수: 0선
-            if slot[0].key == "NFCI" or slot[0].key.startswith("KR_"):
+            if slot[0].key == "NFCI" or (slot[0].key.startswith("KR_") and slot[0].key.endswith("_NET")):
                 fig.add_hline(
                     y=0, line_dash="dot", line_color="#ffd166", line_width=1,
                     row=row, col=1,
@@ -219,9 +222,16 @@ class ChartBuilder:
         ("KOSPI", "KOSPI", "#e6edf3", "dot"),
     ]
 
-    def _add_benchmark_overlays(self, fig: go.Figure, row: int, korea: bool = False) -> None:
-        """차트 오른쪽 보조축에 S&P500·금(한국 지표면 KOSPI) 가격을 겹쳐 그립니다."""
-        for key, label, color, dash in (self._BENCHMARKS_KR if korea else self._BENCHMARKS):
+    @classmethod
+    def _benchmarks_for(cls, key: str) -> list:
+        """미국 지표엔 S&P500·금, 한국 수급엔 KOSPI, 한국 부동산엔 겹치지 않음."""
+        if key.startswith("KR_APT_"):
+            return []
+        return cls._BENCHMARKS_KR if key.startswith("KR_") else cls._BENCHMARKS
+
+    def _add_benchmark_overlays(self, fig: go.Figure, row: int, benchmarks: list) -> None:
+        """차트 오른쪽 보조축에 벤치마크 가격을 겹쳐 그립니다."""
+        for key, label, color, dash in benchmarks:
             series = self._raw.get(key, pd.Series(dtype=float))
             if series.empty:
                 continue

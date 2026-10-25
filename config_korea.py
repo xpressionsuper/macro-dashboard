@@ -116,12 +116,59 @@ KIS_PROGRAM_FIELDS: dict[str, str] = {
 }
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  ② 부동산 — 한국부동산원 R-ONE Open API 주간 아파트 매매가격지수 (REB_API_KEY 필요)
+# ══════════════════════════════════════════════════════════════════════
+REB_APT_TABLE = "T244183132827305"   # (주) 매매가격지수 (아파트)
+REB_START_WEEK = "202001"            # 2020년 1주차부터
+
+_REB_SOURCE = "한국부동산원 R-ONE (주간 아파트 매매가격지수)"
+
+
+def _apt(key, region, region_en, description) -> IndicatorMeta:
+    return IndicatorMeta(
+        key=key, name_ko=region, name_en=f"{region_en} Apartment Sales Price Index",
+        description=description, direction="↑집값 상승", source=_REB_SOURCE, category=2,
+        unit="지수",
+        when_up="매수 수요가 공급보다 많을 때 오릅니다. 금리 인하·대출 규제 완화, 공급 부족, 전세가 상승(전세→매매 전환) 등이 주된 원인입니다.",
+        when_down="고금리·대출 규제 강화로 매수 여력이 줄거나, 입주 물량이 몰리거나, 경기 둔화로 매수 심리가 위축될 때 내립니다.",
+    )
+
+
+# 지표 키 → R-ONE 지역 코드(CLS_ID)
+REB_REGIONS: dict[str, str] = {
+    "KR_APT_NATION":  "50001",
+    "KR_APT_SEOUL":   "50008",
+    "KR_APT_GYEONGGI": "50016",
+    "KR_APT_INCHEON": "50124",
+    "KR_APT_LOCAL":   "50003",
+}
+
+APT_PRICE: list[IndicatorMeta] = [
+    _apt("KR_APT_NATION", "전국", "Nationwide",
+         "전국 아파트 매매가격의 주간 변화를 지수로 나타낸 값입니다(기준시점=100). 한국부동산원이 매주 표본 아파트의 시세를 조사해 매주 목요일 발표하며, 선의 높이는 기준시점 대비 가격 수준, 기울기는 상승·하락 속도를 뜻합니다."),
+    _apt("KR_APT_SEOUL", "서울", "Seoul",
+         "서울 아파트 매매가격지수입니다. 국내 집값 흐름을 가장 먼저 이끄는 지역으로, 금리·대출 정책 변화에 가장 민감하게 반응합니다."),
+    _apt("KR_APT_GYEONGGI", "경기", "Gyeonggi",
+         "경기 아파트 매매가격지수입니다. 서울 집값이 오르면 상대적으로 저렴한 경기로 수요가 번지는 '갭 메우기'가 시차를 두고 나타나는 경우가 많습니다."),
+    _apt("KR_APT_INCHEON", "인천", "Incheon",
+         "인천 아파트 매매가격지수입니다. 수도권 중 입주 물량 영향이 큰 지역이라 공급이 몰리는 시기에 상대적으로 약한 흐름을 보이기도 합니다."),
+    _apt("KR_APT_LOCAL", "지방", "Non-Capital Region",
+         "수도권(서울·경기·인천)을 제외한 지방 아파트 매매가격지수입니다. 수도권과의 격차가 벌어지는지 좁혀지는지를 보면 지역 간 양극화 정도를 알 수 있습니다."),
+]
+
+
 CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
     1: (
         "① 수급",
         "투자 주체별·기관 세부 누적 순매수와 선물 차익거래",
         INVESTOR_FLOW + INST_DETAIL + PROGRAM_ARB,
     ),
+    2: (
+        "② 부동산",
+        "전국·서울·경기·인천·지방 아파트 매매가격지수 (주간)",
+        APT_PRICE,
+    ),
 }
 
-ALL_INDICATORS: list[IndicatorMeta] = INVESTOR_FLOW + INST_DETAIL + PROGRAM_ARB
+ALL_INDICATORS: list[IndicatorMeta] = INVESTOR_FLOW + INST_DETAIL + PROGRAM_ARB + APT_PRICE

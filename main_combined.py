@@ -86,7 +86,7 @@ class CombinedDashboard:
 
         print("[4/8]  투자·한국 데이터 수집")
         inv_raw = self._collect_investment_data()
-        kr_raw  = self._fetch_kis_kospi_flows()
+        kr_raw  = {**self._fetch_kis_kospi_flows(), **self._fetch_reb_apt_index()}
         print(f"       수집 완료: {len(inv_raw) + len(kr_raw)}개 시리즈\n")
 
         print("[5/8]  파생 지표 계산 (유동성 파생 + 물가 YoY 변환)")
@@ -346,6 +346,33 @@ class CombinedDashboard:
         return out
 
     @staticmethod
+    def _fetch_reb_apt_index() -> dict[str, pd.Series]:
+        """한국부동산원 R-ONE Open API로 지역별 주간 아파트 매매가격지수를 가져옵니다 (지역당 1회 호출)."""
+        out = {k: pd.Series(dtype=float, name=k) for k in kr_cfg.REB_REGIONS}
+        api_key = os.environ.get("REB_API_KEY", "")
+        if not api_key:
+            print(f"  ❌  {'아파트 매매가격지수':<30} [REB]  REB_API_KEY 없음 → 건너뜀")
+            return out
+        for key, cls_id in kr_cfg.REB_REGIONS.items():
+            try:
+                body = requests.get(
+                    "https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do", timeout=30, params={
+                        "KEY": api_key, "Type": "json", "pIndex": 1, "pSize": 1000,
+                        "STATBL_ID": kr_cfg.REB_APT_TABLE, "DTACYCLE_CD": "WK",
+                        "CLS_ID": cls_id, "START_WRTTIME": kr_cfg.REB_START_WEEK,
+                    },
+                ).json()
+                rows = body["SttsApiTblData"][1]["row"]
+                out[key] = pd.Series(
+                    [float(r["DTA_VAL"]) for r in rows],
+                    index=pd.to_datetime([r["WRTTIME_DESC"] for r in rows]), name=key,
+                ).sort_index()
+                print(f"  ✅  {key:<36} [REB]  {len(out[key])} pts")
+            except Exception as exc:
+                print(f"  ❌  {key:<36} [REB]  최종 실패 → {exc}")
+        return out
+
+    @staticmethod
     def _fetch_treasury_total_debt() -> pd.Series:
         """
         TreasuryDirect MSPD Table 1의 월별 총부채를 가져옵니다. FRED의 GFDEBTN은
@@ -510,7 +537,7 @@ class CombinedDashboard:
         print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║         🏦📉💵📈  미국 경기·유동성·물가·투자 통합 모니터              ║
-║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭~⑯ 투자   ⑰ 한국 수급         ║
+║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭~⑯ 투자   ⑰~⑱ 한국 수급·부동산 ║
 ╚══════════════════════════════════════════════════════════════════════╝""")
 
 
