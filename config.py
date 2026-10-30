@@ -235,6 +235,14 @@ FINANCIAL_MARKET: list[IndicatorMeta] = [
         when_down="경기·기업실적에 대한 낙관, 위험자산 선호 심리가 강할 때 축소됩니다. 지나치게 낮으면(과열) 오히려 리스크가 과소평가됐다는 신호로 보기도 합니다.",
     ),
     IndicatorMeta(
+        key="BBB_OAS", name_ko="BBB 크레딧 스프레드", name_en="BBB OAS",
+        description="투자등급의 맨 아래 칸인 BBB 등급 회사채가 국채 대비 얼마나 높은 금리를 부담하는지를 보여줍니다. 한 단계만 강등돼도 투기등급(HY)으로 떨어지는 경계선이라, 투자등급만 살 수 있는 연기금·보험사의 강제 매도('추락 천사') 위험이 가장 먼저 반영됩니다. 미국 투자등급 회사채의 절반가량이 BBB라 신용시장에서 가장 큰 덩어리이기도 합니다. HY만 벌어지면 부실기업 위주의 부담이지만, BBB까지 벌어지면 우량기업 쪽으로 번지기 시작했다는 신호로 봅니다.",
+        direction="↑유동성 악화", source="FRED: BAMLC0A4CBBB", category=4,
+        fred_id="BAMLC0A4CBBB", unit="bps", divisor=0.01,
+        when_up="경기 둔화로 BBB 기업들의 강등 우려가 커지거나, 강등 시 강제 매도를 앞둔 기관들이 미리 팔 때 확대됩니다.",
+        when_down="기업 실적이 안정적이고 강등 우려가 낮을 때 축소됩니다.",
+    ),
+    IndicatorMeta(
         key="IG_OAS", name_ko="IG 크레딧 스프레드", name_en="IG OAS",
         description="신용등급이 우량한(투자등급) 기업이 국채 대비 얼마나 높은 금리를 부담하는지를 보여줍니다. HY 스프레드보다 움직임은 둔하지만, 우량기업 발행시장을 포함하기 때문에 더 넓은 신용시장 전체의 체온계 역할을 합니다. IG 스프레드까지 확대되면 신용경색이 부실기업을 넘어 우량기업까지 번졌다는 뜻이라 더 심각한 신호로 봅니다.",
         direction="↑유동성 악화", source="FRED: BAMLC0A0CM", category=4,

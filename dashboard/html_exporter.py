@@ -424,9 +424,9 @@ class HtmlExporter:
                     "특히 부채한도 협상 타결 직후 TGA가 급격히 채워지는 구간에서 이런 패턴이 잘 나타납니다."
                 ),
             )
-        # 한국 수급 묶음 차트: 첫 지표 설명만 보이면 나머지 주체 설명이 사라지므로 전부 나열
+        # 한국 수급·크레딧 스프레드 묶음 차트: 첫 지표 설명만 보이면 나머지 설명이 사라지므로 전부 나열
         head = slot_results[0]
-        if len(slot_results) > 1 and head.key.startswith("KR_"):
+        if len(slot_results) > 1 and (head.key.startswith("KR_") or head.key == "HY_OAS"):
             described = [r for r in slot_results if r.description]
             text = described[0].description if len(described) == 1 else "<br><br>".join(
                 f"<b>{r.name_ko.removesuffix(' 누적 순매수')}</b> — {r.description}" for r in described

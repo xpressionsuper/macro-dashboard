@@ -38,6 +38,7 @@ COMBINED_CHARTS: dict[str, list[str]] = {
     "FEDFUNDS": ["DGS3MO"],       # ④ 기준금리 + 3개월물 국채 수익률 함께
     "SOFR":     ["IORB"],          # ④ SOFR 차트에 IORB 함께
     "DGS10":    ["DGS2"],          # ④ 10Y + 2Y 함께
+    "HY_OAS":   ["BBB_OAS", "IG_OAS"],   # ④ 크레딧 스프레드: HY·BBB·IG 등급별 한 차트
     "NET_LIQ":  [],                # ③ 별도 처리
     # 한국 ①: 외국인·기관·개인·기타법인 한 차트 / ②: 기관 세부 7개 한 차트
     "KR_FOREIGN_NET": ["KR_INST_NET", "KR_INDIV_NET", "KR_CORP_NET"],
@@ -53,6 +54,7 @@ COMBINED_CHARTS: dict[str, list[str]] = {
 }
 # 지표가 많아 이름을 이어 붙이면 너무 긴 차트의 제목
 SLOT_TITLES: dict[str, str] = {
+    "HY_OAS":         "크레딧 스프레드 (HY · BBB · IG)",
     "KR_FOREIGN_NET": "외국인 누적 순매수",
     "KR_PENSION_NET": "기관 세부 수급",
     "KR_BOP_TOTAL_NET": "외국인 증권투자자금 유출입 (누적, 달러)",
@@ -60,7 +62,7 @@ SLOT_TITLES: dict[str, str] = {
     "KR_APT_BUNDANG": "경기 아파트 가격 (84㎡ 환산)",
 }
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
-SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2"}.union(
+SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2", "BBB_OAS", "IG_OAS"}.union(
     *(COMBINED_CHARTS[k] for k in ("KR_FOREIGN_NET", "KR_PENSION_NET", "KR_APT_GANGNAM",
                                    "KR_APT_BUNDANG", "KR_BOP_TOTAL_NET"))
 )
@@ -147,7 +149,7 @@ class ChartBuilder:
             self._add_benchmark_overlays(fig, 1, self._benchmarks_for(slot[0].key))
             title = SLOT_TITLES.get(slot[0].key) or " & ".join(r.name_ko for r in slot)
             self._apply_layout(fig, height=330, title=title)
-            if len(slot) > 4:   # 범례가 여러 줄이면 제목과 겹치므로 차트 아래로
+            if len(fig.data) > 4:   # 선이 많아 범례가 여러 줄이면 제목과 겹치므로 차트 아래로
                 fig.update_layout(height=380, legend=dict(yanchor="top", y=-0.12),
                                   margin=dict(t=40, b=90))
             figures.append((fig, slot))

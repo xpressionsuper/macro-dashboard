@@ -1,8 +1,8 @@
 """
 indicators/financial_market.py ─ ④ 금융시장 유동성 지표
 =====================================================================
-시장에서 관측되는 유동성 가격·스트레스 신호 9개 지표를 진단합니다.
-SOFR / IORB / HY_OAS / IG_OAS / NFCI / VIX / DGS2 / DGS10 / T10Y2Y
+시장에서 관측되는 유동성 가격·스트레스 신호 10개 지표를 진단합니다.
+SOFR / IORB / HY_OAS / BBB_OAS / IG_OAS / NFCI / VIX / DGS2 / DGS10 / T10Y2Y
 """
 
 import numpy as np
