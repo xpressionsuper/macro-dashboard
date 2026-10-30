@@ -284,7 +284,8 @@ class CombinedDashboard:
             except Exception as exc:
                 print(f"  ⚠️  한국 데이터 저장분 읽기 실패 → 새로 수집 ({exc})")
         refresh = (not old or datetime.now().weekday() == 0
-                   or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch")
+                   or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+                   or any(s.empty for s in old.values()))   # 지난번에 실패한 지표가 있으면 다시 시도
         if not refresh:
             print("  ♻️  한국 데이터: 지난 월요일 수집분 재사용 (월요일 아침에만 갱신)")
             return old
@@ -383,18 +384,23 @@ class CombinedDashboard:
             return out
         end = datetime.now().strftime("%Y%m")
         for key, item in kr_cfg.ECOS_BOP_ITEMS.items():
-            try:
-                url = "/".join(["https://ecos.bok.or.kr/api/StatisticSearch", api_key, "json", "kr", "1", "1000",
-                                kr_cfg.ECOS_BOP_TABLE, "M", kr_cfg.ECOS_START_MONTH, end, item])
-                rows = requests.get(url, timeout=30).json()["StatisticSearch"]["row"]
-                monthly = pd.Series(
-                    [float(r["DATA_VALUE"]) for r in rows],
-                    index=pd.to_datetime([r["TIME"] + "01" for r in rows], format="%Y%m%d"),
-                ).sort_index()
-                out[key] = (monthly.cumsum() / 100).rename(key)   # 백만달러 → 억달러
-                print(f"  ✅  {key:<36} [ECOS]  {len(monthly)} pts")
-            except Exception as exc:
-                print(f"  ❌  {key:<36} [ECOS]  최종 실패 → {exc}")
+            url = "/".join(["https://ecos.bok.or.kr/api/StatisticSearch", api_key, "json", "kr", "1", "1000",
+                            kr_cfg.ECOS_BOP_TABLE, "M", kr_cfg.ECOS_START_MONTH, end, item])
+            for attempt in range(3):   # ECOS 서버가 해외(GitHub) 접속에 가끔 응답하지 않음 → 쉬고 재시도
+                try:
+                    rows = requests.get(url, timeout=30).json()["StatisticSearch"]["row"]
+                    monthly = pd.Series(
+                        [float(r["DATA_VALUE"]) for r in rows],
+                        index=pd.to_datetime([r["TIME"] + "01" for r in rows], format="%Y%m%d"),
+                    ).sort_index()
+                    out[key] = (monthly.cumsum() / 100).rename(key)   # 백만달러 → 억달러
+                    print(f"  ✅  {key:<36} [ECOS]  {len(monthly)} pts")
+                    break
+                except Exception as exc:
+                    if attempt == 2:
+                        print(f"  ❌  {key:<36} [ECOS]  최종 실패 → {exc}")
+                    else:
+                        time.sleep(15 * (attempt + 1))
         return out
 
     @staticmethod
