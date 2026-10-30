@@ -12,6 +12,7 @@ main_combined.py ─ 유동성 + 경기침체 통합 대시보드 진입점
 """
 
 import os
+from pathlib import Path
 import sys
 import time
 import warnings
@@ -62,6 +63,7 @@ REC_OFFSET   = 5    # 경기침체 카테고리 번호를 5만큼 밀어 유동�
 INF_OFFSET   = 9    # 물가 카테고리 번호를 9만큼 밀어 유동성+침체(1~9)와 겹치지 않게 함
 INV_OFFSET   = 13   # 투자 카테고리 번호를 13만큼 밀어 앞의 세 대시보드(1~13)와 겹치지 않게 함
 KR_OFFSET    = 16   # 한국 카테고리 번호를 16만큼 밀어 앞의 네 대시보드(1~16)와 겹치지 않게 함
+KR_CACHE     = Path("kr_cache.pkl")   # 한국 데이터 주간 저장분 (GitHub Actions 캐시로 실행 간 유지)
 
 
 class CombinedDashboard:
@@ -87,8 +89,7 @@ class CombinedDashboard:
 
         print("[4/8]  투자·한국 데이터 수집")
         inv_raw = self._collect_investment_data()
-        kr_raw  = {**self._fetch_kis_kospi_flows(), **self._fetch_molit_apt_prices()}
-        kr_raw.update(self._fetch_ecos_bop_flows())
+        kr_raw  = self._load_korea_data()
         print(f"       수집 완료: {len(inv_raw) + len(kr_raw)}개 시리즈\n")
 
         print("[5/8]  파생 지표 계산 (유동성 파생 + 물가 YoY 변환)")
@@ -269,6 +270,31 @@ class CombinedDashboard:
         return raw
 
     # ── 한국 증시 수급 파이프라인 ─────────────────────────────────────
+
+    @classmethod
+    def _load_korea_data(cls) -> dict[str, pd.Series]:
+        """
+        한국 주식 수급·부동산·외국인 증권투자자금은 월요일(또는 수동 실행·저장분 없음)에만 새로 받고,
+        다른 날은 지난 저장분을 그대로 씁니다. 새로 받다 실패한 지표는 지난 저장분으로 채웁니다.
+        """
+        old: dict = {}
+        if KR_CACHE.exists():
+            try:
+                old = pd.read_pickle(KR_CACHE)
+            except Exception as exc:
+                print(f"  ⚠️  한국 데이터 저장분 읽기 실패 → 새로 수집 ({exc})")
+        refresh = (not old or datetime.now().weekday() == 0
+                   or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch")
+        if not refresh:
+            print("  ♻️  한국 데이터: 지난 월요일 수집분 재사용 (월요일 아침에만 갱신)")
+            return old
+
+        raw = {**cls._fetch_kis_kospi_flows(), **cls._fetch_molit_apt_prices(), **cls._fetch_ecos_bop_flows()}
+        for key, series in raw.items():
+            if series.empty and key in old:
+                raw[key] = old[key]
+        pd.to_pickle(raw, KR_CACHE)
+        return raw
 
     @staticmethod
     def _fetch_kis_kospi_flows() -> dict[str, pd.Series]:

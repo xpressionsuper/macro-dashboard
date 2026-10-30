@@ -2,7 +2,9 @@ name: 매크로 유동성 모니터 v3
 
 on:
   schedule:
-    - cron: '0 22 * * 1-5'   # 화~토 오전 7시 KST (UTC 월~금 22:00) — 전날(월~금) 장 마감 데이터 반영, 주말 데이터 없는 일·월 아침은 건너뜀
+    # 월~토 오전 7시 KST (UTC 일~금 22:00). 미국 지표는 매일 갱신, 한국 수급·부동산은 월요일 아침에만 새로 받음
+    # (다른 날은 아래 캐시에 저장된 월요일 수집분 재사용). 일요일 아침은 새 데이터가 없어 건너뜀
+    - cron: '0 22 * * 0-5'
   workflow_dispatch:         # 수동 실행 버튼
 
 permissions:
@@ -33,6 +35,14 @@ jobs:
 
       - name: 패키지 설치
         run: pip install -r requirements.txt
+
+      # 한국 데이터 주간 저장분 — 매 실행마다 최신 것을 불러오고, 끝나면 새로 저장
+      - name: 한국 데이터 저장분 불러오기
+        uses: actions/cache@v4
+        with:
+          path: kr_cache.pkl
+          key: kr-cache-${{ github.run_id }}
+          restore-keys: kr-cache-
 
       - name: 모니터 실행
         env:
