@@ -61,6 +61,9 @@ SLOT_TITLES: dict[str, str] = {
     "KR_APT_GANGNAM": "서울 아파트 가격 (84㎡ 환산)",
     "KR_APT_BUNDANG": "경기 아파트 가격 (84㎡ 환산)",
 }
+# 지표 데이터가 벤치마크(S&P500·금)보다 짧아 앞부분이 비는 차트 — 가로축을 지표 기간으로 자름
+# (FRED의 ICE BofA 스프레드는 최근 약 3년치만 공개)
+CROP_TO_DATA: set[str] = {"HY_OAS"}
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
 SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2", "BBB_OAS", "IG_OAS"}.union(
     *(COMBINED_CHARTS[k] for k in ("KR_FOREIGN_NET", "KR_PENSION_NET", "KR_APT_GANGNAM",
@@ -152,6 +155,10 @@ class ChartBuilder:
             if len(fig.data) > 4:   # 선이 많아 범례가 여러 줄이면 제목과 겹치므로 차트 아래로
                 fig.update_layout(height=380, legend=dict(yanchor="top", y=-0.12),
                                   margin=dict(t=40, b=90))
+            if slot[0].key in CROP_TO_DATA:
+                dated = [r.series for r in slot if not r.series.empty]
+                if dated:
+                    fig.update_xaxes(range=[min(s.index[0] for s in dated), max(s.index[-1] for s in dated)])
             figures.append((fig, slot))
 
         return figures
