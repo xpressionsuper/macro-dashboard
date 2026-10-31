@@ -20,8 +20,10 @@ if _ENV_FILE.exists():
             os.environ.setdefault(_k.strip(), _v.strip().strip("'\""))
 
 FRED_API_KEY     = os.environ.get("FRED_API_KEY", "")
-TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+# 텔레그램 발송 중단 (2026-10-31) — 빈 값이면 TelegramSender가 전송을 건너뜀.
+# 다시 켜려면 os.environ.get("TELEGRAM_TOKEN", "") / os.environ.get("TELEGRAM_CHAT_ID", "")로 되돌리면 됨
+TELEGRAM_TOKEN   = ""
+TELEGRAM_CHAT_ID = ""
 
 # ── 수집·출력 설정 ────────────────────────────────────────────────────
 LOOKBACK_DAYS = 365 * 10     # 10년치 데이터 수집
