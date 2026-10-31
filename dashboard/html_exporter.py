@@ -28,139 +28,142 @@ from indicators.base import IndicatorResult
 # ── HTML 템플릿 스타일 ────────────────────────────────────────────────
 _CSS = """
 :root {
-  --bg:       #0d1117;
-  --surface:  #161b22;
-  --border:   #21262d;
-  --accent:   #00d4ff;
-  --text:     #c9d1d9;
-  --muted:    #8b949e;
-  --up:       #3fb950;
-  --down:     #f85149;
-  --warn:     #d29922;
-  --font:     'Inter', 'Nanum Gothic', sans-serif;
+  --bg:        #0e0e0d;
+  --surface:   #181817;
+  --surface-2: #201f1e;
+  --border:    #2a2a28;
+  --border-2:  #383835;
+  --accent:    #3fc6ec;
+  --accent-bg: rgba(63,198,236,.10);
+  --text:      #ecebe6;
+  --text-2:    #c3c2b7;
+  --muted:     #908e87;
+  --up:        #4bbf6b;
+  --down:      #ea5a52;
+  --warn:      #e0a530;
+  --font:      'Pretendard Variable', Pretendard, -apple-system, 'Apple SD Gothic Neo',
+               'Malgun Gothic', sans-serif;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; scrollbar-color: var(--border-2) var(--bg); }
 body { background: var(--bg); color: var(--text); font-family: var(--font);
-       font-size: 17px; line-height: 1.6; }
+       font-size: 16px; line-height: 1.6; letter-spacing: -0.01em;
+       -webkit-font-smoothing: antialiased; }
+::selection { background: rgba(63,198,236,.28); color: var(--text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
 /* ── 레이아웃 ── */
 .layout { display: flex; min-height: 100vh; }
-.sidebar { width: 220px; min-width: 220px; background: var(--surface);
+.sidebar { width: 232px; min-width: 232px; background: var(--bg);
            border-right: 1px solid var(--border);
-           padding: 20px 0; position: sticky; top: 0; height: 100vh;
-           overflow-y: auto; }
-.main { flex: 1; padding: 24px; overflow-x: hidden; }
+           padding: 24px 12px; position: sticky; top: 0; height: 100vh;
+           overflow-y: auto; scrollbar-width: thin; }
+.main { flex: 1; min-width: 0; max-width: 1480px; padding: 40px 40px 96px; }
 
 /* ── 사이드바 ── */
-.sidebar-title { padding: 0 16px 16px; font-size: 18px; font-weight: 700;
-                 color: var(--accent); border-bottom: 1px solid var(--border);
-                 margin-bottom: 8px; }
-.nav-item { display: block; padding: 10px 16px; cursor: pointer;
-            color: var(--muted); font-size: 16px; border-radius: 0;
-            transition: all .2s; border-left: 3px solid transparent; }
-.nav-item:hover { color: var(--text); background: rgba(255,255,255,.03); }
-.nav-item.active { color: var(--accent); border-left-color: var(--accent);
-                   background: rgba(0,212,255,.06); }
-.nav-group { padding: 14px 16px 4px; font-size: 12px; font-weight: 700;
-             color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.nav-group:first-child { padding-top: 0; }
+.sidebar-title { display: flex; align-items: center; gap: 10px;
+                 padding: 0 10px 20px; font-size: 15px; font-weight: 700;
+                 color: var(--text); letter-spacing: -0.02em; }
+.sidebar-title::before { content: ""; width: 8px; height: 8px; border-radius: 2px;
+                         background: var(--accent); }
+.nav-item { display: block; padding: 7px 10px; margin: 1px 0; border-radius: 6px;
+            color: var(--muted); font-size: 14px; line-height: 1.45; text-decoration: none;
+            transition: color .15s, background-color .15s; }
+.nav-item:hover { color: var(--text); background: var(--surface); }
+.nav-item.active { color: var(--text); background: var(--surface-2);
+                   box-shadow: inset 2px 0 0 var(--accent); }
+.nav-group { padding: 22px 10px 6px; font-size: 12px; font-weight: 600;
+             color: var(--muted); letter-spacing: .02em; }
 
 /* ── 헤더 ── */
-.page-header { margin-bottom: 28px; }
-.page-title { font-size: 26px; font-weight: 700; color: var(--accent); }
-.page-subtitle { color: var(--muted); font-size: 16px; margin-top: 4px; }
+.page-header { margin-bottom: 40px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.page-title { font-size: 28px; font-weight: 700; color: var(--text);
+              letter-spacing: -0.03em; line-height: 1.3; text-wrap: balance; }
+.page-subtitle { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-top: 10px;
+                 color: var(--muted); font-size: 14px; }
+.page-subtitle b { color: var(--text-2); font-weight: 500; font-variant-numeric: tabular-nums; }
 
 /* ── 카테고리 섹션 ── */
-.category-section { margin-bottom: 48px; scroll-margin-top: 20px; }
-.category-header { display: flex; align-items: baseline; gap: 12px;
-                   margin-bottom: 6px; }
-.category-name { font-size: 20px; font-weight: 700; color: var(--text); }
-.category-desc { font-size: 15px; color: var(--muted); }
-
-/* ── 요약 테이블 ── */
-.summary-table { width: 100%; border-collapse: collapse;
-                 margin: 14px 0 20px; font-size: 16px; }
-.summary-table th { background: var(--surface); color: var(--muted);
-                    font-weight: 600; text-align: left;
-                    padding: 8px 12px; border-bottom: 1px solid var(--border); }
-.summary-table td { padding: 8px 12px; border-bottom: 1px solid var(--border);
-                    vertical-align: middle; }
-.summary-table tr:hover td { background: rgba(255,255,255,.02); }
-.val-cell  { font-family: 'JetBrains Mono', monospace; font-weight: 700;
-             color: var(--accent); white-space: nowrap; }
-.chg-pos   { color: var(--up);   font-weight: 600; }
-.chg-neg   { color: var(--down); font-weight: 600; }
-.chg-neu   { color: var(--muted); }
-.pct-bar   { display: inline-block; width: 60px; height: 6px;
-             background: var(--border); border-radius: 3px; vertical-align: middle;
-             margin-right: 6px; }
-.pct-fill  { height: 100%; border-radius: 3px; background: var(--accent); }
-.desc-cell { color: var(--muted); font-size: 15px; max-width: 260px;
-             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ctx-cell  { font-size: 15px; color: var(--muted); max-width: 320px; }
+.category-section { margin-bottom: 64px; scroll-margin-top: 24px; }
+.category-header { margin-bottom: 18px; }
+.category-name { display: block; font-size: 21px; font-weight: 700; color: var(--text);
+                 letter-spacing: -0.025em; line-height: 1.35; }
+.category-desc { display: block; margin-top: 2px; font-size: 14px; color: var(--muted); }
 
 /* ── 지표 행 (설명 → 차트 → 증가/감소) ── */
-.indicator-rows { display: flex; flex-direction: column; gap: 12px; margin: 14px 0 24px; }
-.indicator-row { display: flex; align-items: stretch; gap: 14px; flex-wrap: wrap;
+.indicator-rows { display: flex; flex-direction: column; gap: 16px; }
+.indicator-row { display: flex; align-items: stretch; gap: 24px; flex-wrap: wrap;
                  background: var(--surface); border: 1px solid var(--border);
-                 border-radius: 8px; padding: 12px 16px; }
-.indicator-row.newest { border-color: var(--accent);
-                         box-shadow: 0 0 0 1px var(--accent), 0 0 16px rgba(0,212,255,.25); }
-.newest-badge { display: inline-block; font-size: 10px; font-weight: 700;
-                color: var(--bg); background: var(--accent);
-                padding: 1px 6px; border-radius: 999px; margin-left: 4px;
-                vertical-align: middle; }
-.row-date.newest { color: var(--accent); font-weight: 600; }
-.row-desc  { flex: 1 1 240px; min-width: 200px; }
-.row-head  { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
-             margin-bottom: 6px; }
-.row-name  { font-size: 17px; font-weight: 700; color: var(--accent); }
-.row-en    { font-size: 12px; color: var(--muted); }
-.row-val   { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 15px; }
-.row-date  { font-size: 12px; color: var(--muted); }
-.row-chg   { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px;
-             padding: 2px 7px; border-radius: 999px; }
-.row-chg.up   { color: var(--up);   background: rgba(63,185,80,.12); }
-.row-chg.down { color: var(--down); background: rgba(248,81,73,.12); }
-.row-text  { font-size: 15px; color: var(--text); line-height: 1.55; }
-.copy-btn  { margin-left: auto; font-size: 12px; color: var(--muted); background: transparent;
-             border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
-.copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+                 border-radius: 12px; padding: 22px 24px; }
+.indicator-row.newest { border-color: rgba(63,198,236,.45); }
+.newest-badge { display: inline-block; font-size: 11px; font-weight: 600; line-height: 1.6;
+                color: var(--accent); background: var(--accent-bg);
+                padding: 0 7px; border-radius: 999px; margin-left: 2px; }
+.row-date.newest { color: var(--text-2); }
+.row-desc  { flex: 1 1 260px; min-width: 220px; }
+.row-head  { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap;
+             margin-bottom: 8px; }
+.row-name  { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
+.row-en    { font-size: 12px; color: var(--muted); letter-spacing: 0; }
+.row-val   { font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.02em;
+             font-variant-numeric: tabular-nums; margin-right: 4px; }
+.row-date  { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.row-chg   { font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums;
+             padding: 1px 8px; border-radius: 999px; }
+.row-chg.up   { color: var(--up);   background: rgba(75,191,107,.12); }
+.row-chg.down { color: var(--down); background: rgba(234,90,82,.12); }
+.row-text  { margin-top: 14px; font-size: 14.5px; color: var(--text-2); line-height: 1.7;
+             max-width: 62ch; }
+.row-text b { color: var(--text); font-weight: 600; }
+.copy-btn  { margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+             font: inherit; font-size: 12px; color: var(--muted); background: transparent;
+             border: 1px solid var(--border-2); border-radius: 6px; padding: 3px 9px; cursor: pointer;
+             transition: color .15s, border-color .15s; }
+.copy-btn svg { width: 13px; height: 13px; }
+.copy-btn:hover { color: var(--text); border-color: var(--muted); }
 .copy-btn.done  { color: var(--up); border-color: var(--up); }
 .copy-btn.fail  { color: var(--down); border-color: var(--down); }
-#img-overlay { display: none; position: fixed; inset: 0; z-index: 100; background: var(--bg);
+#img-overlay { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(14,14,13,.96);
                flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; }
 #img-overlay.open { display: flex; }
-#img-overlay img { max-width: 100%; max-height: 70vh; border-radius: 6px;
+#img-overlay img { max-width: 100%; max-height: 70vh; border-radius: 8px;
                    -webkit-touch-callout: default; user-select: auto; }
-.ov-hint  { color: #fff; font-size: 15px; font-weight: 600; }
-.ov-close { color: var(--muted); font-size: 14px; padding: 8px 16px; border: 1px solid var(--border);
+.ov-hint  { color: var(--text); font-size: 15px; font-weight: 600; }
+.ov-close { color: var(--text-2); font-size: 14px; padding: 8px 16px; border: 1px solid var(--border-2);
             border-radius: 999px; }
-.row-chart { flex: 0 1 580px; min-width: 0; }
+.row-chart { flex: 0 1 540px; min-width: 0; }
 .row-chart .chart-wrap { background: transparent; border: none; padding: 0; }
 
-/* ── 모바일: 사이드바를 상단 가로 메뉴로, 여백 축소 ── */
+.row-updown { flex: 1 1 220px; min-width: 200px; display: flex; flex-direction: column; gap: 10px; }
+.detail-row { font-size: 14px; line-height: 1.65; color: var(--text-2);
+              padding: 12px 14px; border-radius: 8px; background: var(--surface-2); }
+.detail-row b { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600; }
+.detail-row.up b   { color: var(--up); }
+.detail-row.down b { color: var(--down); }
+
+/* ── 좁은 화면: 여백 축소 / 모바일: 사이드바를 상단 가로 메뉴로 ── */
+@media (max-width: 1100px) {
+  .main { padding: 32px 24px 80px; }
+  .indicator-row { gap: 20px; padding: 18px; }
+}
 @media (max-width: 760px) {
   .layout { display: block; }
   .sidebar { position: sticky; top: 0; z-index: 10; width: auto; min-width: 0; height: auto;
-             padding: 0; display: flex; overflow-x: auto; white-space: nowrap;
-             border-right: none; border-bottom: 1px solid var(--border); }
+             padding: 6px 8px; display: flex; gap: 2px; overflow-x: auto; white-space: nowrap;
+             border-right: none; border-bottom: 1px solid var(--border);
+             background: rgba(14,14,13,.92); backdrop-filter: blur(10px); scrollbar-width: none; }
   .sidebar-title, .nav-group { display: none; }
-  .nav-item { padding: 10px 12px; border-left: none; border-bottom: 3px solid transparent; }
-  .nav-item.active { border-bottom-color: var(--accent); }
-  .main { padding: 12px; }
-  .indicator-row { padding: 10px; }
+  .nav-item { padding: 7px 11px; font-size: 13.5px; }
+  .nav-item.active { box-shadow: inset 0 -2px 0 var(--accent); }
+  .main { padding: 24px 16px 64px; }
+  .page-title { font-size: 22px; }
+  .page-header { margin-bottom: 28px; padding-bottom: 18px; }
+  .category-section { margin-bottom: 44px; scroll-margin-top: 56px; }
+  .category-name { font-size: 19px; }
+  .indicator-row { padding: 16px 14px; border-radius: 10px; }
   .row-desc, .row-updown { min-width: 0; }
-  .category-section { scroll-margin-top: 50px; }
 }
-.row-updown { flex: 1 1 240px; min-width: 220px; display: flex; flex-direction: column; gap: 8px; }
-.detail-row { font-size: 16px; font-weight: 600; line-height: 1.5;
-              padding: 10px 12px; border-radius: 6px; }
-.detail-row.up   { background: rgba(63,185,80,.1);  border: 1px solid var(--up); }
-.detail-row.down { background: rgba(248,81,73,.1); border: 1px solid var(--down); }
-.detail-row b { display: block; margin-bottom: 4px; font-size: 15px; }
-.detail-row.up b   { color: var(--up); }
-.detail-row.down b { color: var(--down); }
 """
 
 _JS_NAV = """
@@ -169,18 +172,17 @@ _JS_NAV = """
   var sections = document.querySelectorAll('.category-section');
   var navItems = document.querySelectorAll('.nav-item');
 
-  navItems.forEach(function (item) {
-    item.addEventListener('click', function () {
-      var target = document.getElementById(item.dataset.target);
-      if (target) target.scrollIntoView({ behavior: 'smooth' });
-    });
-  });
-
+  // 메뉴는 #앵커 링크라 이동은 브라우저가 처리 — 여기선 현재 위치 표시만
   var observer = new IntersectionObserver(function (entries) {
     entries.forEach(function (e) {
       if (e.isIntersecting) {
         navItems.forEach(function (n) {
-          n.classList.toggle('active', n.dataset.target === e.target.id);
+          var on = n.getAttribute('href') === '#' + e.target.id;
+          n.classList.toggle('active', on);
+          // 모바일 가로 메뉴: 현재 항목이 화면 밖이면 보이도록 옆으로 밀어줌
+          if (on && n.parentNode.scrollWidth > n.parentNode.clientWidth) {
+            n.parentNode.scrollTo({ left: n.offsetLeft - 16, behavior: 'smooth' });
+          }
         });
       }
     });
@@ -201,9 +203,10 @@ _JS_NAV = """
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('.copy-btn');
     if (!btn) return;
+    var text = btn.querySelector('span');
     var flash = function (label, cls) {
-      btn.textContent = label; btn.classList.add(cls);
-      setTimeout(function () { btn.textContent = '📋 Copy'; btn.classList.remove(cls); }, 1500);
+      text.textContent = label; btn.classList.add(cls);
+      setTimeout(function () { text.textContent = 'Copy'; btn.classList.remove(cls); }, 1500);
     };
     var chart = chartOf(btn);
     if (!chart) return flash('Not supported', 'fail');
@@ -241,8 +244,8 @@ class HtmlExporter:
         results:      list[IndicatorResult],
         timestamp:    str,
         category_meta: dict[int, tuple[str, str, list]],
-        page_title:   str = "🏦 미국 달러 유동성 대시보드",
-        sidebar_title: str = "📊 매크로 모니터",
+        page_title:   str = "미국 달러 유동성 대시보드",
+        sidebar_title: str = "매크로 모니터",
         data_sources: str = "FRED · TreasuryDirect · NY Fed",
         sidebar_groups: Optional[list[tuple[str, list[int]]]] = None,
         top_panel:    str = "",          # 헤더 바로 아래, 모든 카테고리 위에 넣을 HTML (id 필요)
@@ -283,6 +286,7 @@ class HtmlExporter:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{self._page_title} — {self._timestamp}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <style>{_CSS}</style>
 </head>
 <body>
@@ -308,21 +312,21 @@ class HtmlExporter:
             items = "\n".join(self._build_sidebar_group(label, cats) for label, cats in self._sidebar_groups)
         else:
             items = "\n".join(
-                f'<div class="nav-item" data-target="cat-{cat}">{name}</div>'
+                f'<a class="nav-item" href="#cat-{cat}">{name}</a>'
                 for cat, (name, _, _) in self._category_meta.items()
             )
         if self._top_nav:
             label, target = self._top_nav
-            items = f'<div class="nav-item" data-target="{target}">{label}</div>' + items
+            items = f'<a class="nav-item" href="#{target}">{label}</a>' + items
         return f"""
-<aside class="sidebar">
+<nav class="sidebar" aria-label="카테고리">
   <div class="sidebar-title">{self._sidebar_title}</div>
   {items}
-</aside>"""
+</nav>"""
 
     def _build_sidebar_group(self, label: str, cats: list[int]) -> str:
         rows = "\n".join(
-            f'<div class="nav-item" data-target="cat-{cat}">{self._category_meta[cat][0]}</div>'
+            f'<a class="nav-item" href="#cat-{cat}">{self._category_meta[cat][0]}</a>'
             for cat in cats if cat in self._category_meta
         )
         return f'<div class="nav-group">{label}</div>{rows}'
@@ -333,8 +337,10 @@ class HtmlExporter:
         header = f"""
 <div class="page-header">
   <div class="page-title">{self._page_title}</div>
-  <div class="page-subtitle">생성: {self._timestamp} &nbsp;|&nbsp;
-    데이터: {self._data_sources}</div>
+  <div class="page-subtitle">
+    <span>업데이트 <b>{self._timestamp}</b></span>
+    <span>데이터 <b>{self._data_sources}</b></span>
+  </div>
 </div>"""
 
         sections = "\n".join(
@@ -463,7 +469,12 @@ class HtmlExporter:
         if chg:
             chg_cls = "up" if r.chg_disp >= 0 else "down"
             chg_badge = f'<span class="row-chg {chg_cls}">{chg}</span>'
-        copy_btn = '<button class="copy-btn" type="button">📋 Copy</button>'
+        copy_btn = (
+            '<button class="copy-btn" type="button" aria-label="차트 이미지 복사">'
+            '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">'
+            '<rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M10.5 5V3.5A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5H5"/>'
+            '</svg><span>Copy</span></button>'
+        )
 
         date_cls = "row-date newest" if is_newest else "row-date"
         newest_badge = ' <span class="newest-badge">최신</span>' if is_newest else ""
@@ -483,6 +494,8 @@ class HtmlExporter:
   </div>
   <div class="row-head">
     <span class="row-val">{latest_str}</span>
+  </div>
+  <div class="row-head">
     <span class="row-date">기준일: {date_str}</span>
     {released_str}
     {chg_badge}

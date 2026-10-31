@@ -86,8 +86,8 @@ class MacroDashboard:
         print("\n[5/6]  HTML 대시보드 생성")
         HtmlExporter(
             figures, results, timestamp, cfg.CATEGORY_META,
-            page_title="🏦 미국 달러 유동성 대시보드",
-            sidebar_title="📊 매크로 모니터",
+            page_title="미국 달러 유동성 대시보드",
+            sidebar_title="매크로 모니터",
         ).export(cfg.OUTPUT_HTML)
 
         # ── [6] 텔레그램 전송 ─────────────────────────────────────────

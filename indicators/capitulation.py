@@ -227,32 +227,45 @@ def assess(raw: dict[str, pd.Series]) -> dict:
 
 _PANEL_CSS = """
 <style>
-.cap-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-             padding: 18px 20px; margin-bottom: 36px; }
-.cap-track { margin-top: 22px; }
-.cap-track h3 { font-size: 17px; margin-bottom: 6px; color: var(--text); }
-.cap-summary { width: 100%; border-collapse: collapse; margin: 8px 0 4px; font-size: 16px; }
-.cap-summary td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.cap-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+             padding: 26px 28px; margin-bottom: 64px; }
+.cap-track { margin-top: 36px; }
+.cap-track h3 { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 10px; color: var(--text); }
+.cap-summary { width: 100%; border-collapse: collapse; margin: 6px 0 0; font-size: 15px; }
+.cap-summary td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.cap-summary td:first-child { color: var(--text); font-weight: 600; padding-left: 0; white-space: nowrap; }
+.cap-summary td:last-child { color: var(--muted); font-size: 14px; }
+.cap-summary tr:last-child td { border-bottom: none; }
 .cap-summary .bad { color: var(--down); font-weight: 700; }
 .cap-summary .ok { color: var(--up); font-weight: 700; }
 .cap-summary .mid { color: var(--warn); font-weight: 700; }
-.cap-ladder { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 10px 0 14px; }
-.cap-step { border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center;
-            color: var(--muted); font-size: 14px; }
-.cap-step .n { font-size: 20px; font-weight: 700; display: block; }
-.cap-step.passed { border-color: var(--warn); color: var(--warn); }
-.cap-step.current { border-color: var(--down); color: var(--text); background: rgba(248,81,73,.12);
-                    box-shadow: 0 0 0 1px var(--down); }
+.cap-summary .unmet { color: var(--text-2); }
+.cap-ladder { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 4px 0 16px; }
+.cap-step { border: 1px solid var(--border); border-radius: 8px; padding: 10px 8px 9px; text-align: center;
+            color: var(--muted); font-size: 13px; background: var(--bg); }
+.cap-step .n { font-size: 18px; font-weight: 700; display: block; font-variant-numeric: tabular-nums; }
+.cap-step.passed { border-color: rgba(224,165,48,.45); color: var(--warn); background: rgba(224,165,48,.06); }
+.cap-step.current { border-color: var(--down); color: var(--text); background: rgba(234,90,82,.12); }
 .cap-step.current .n { color: var(--down); }
-.cap-checks { width: 100%; border-collapse: collapse; font-size: 15px; }
-.cap-checks td, .cap-checks th { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; }
-.cap-checks th { color: var(--muted); font-weight: 600; }
-.cap-checks .met { color: var(--down); font-weight: 700; }
-.cap-checks .unmet { color: var(--muted); }
-.cap-checks .v { font-family: 'JetBrains Mono', monospace; }
-.cap-list { margin: 6px 0 0 20px; color: var(--muted); font-size: 15px; }
-.cap-note { color: var(--muted); font-size: 13px; margin-top: 10px; }
-@media (max-width: 760px) { .cap-ladder { grid-template-columns: repeat(3, 1fr); } }
+.cap-checks { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.cap-checks td, .cap-checks th { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left;
+                                 vertical-align: top; }
+.cap-checks th { color: var(--muted); font-weight: 500; font-size: 13px; }
+.cap-checks td:first-child, .cap-checks th:first-child { padding-left: 0; }
+.cap-checks .met { color: var(--down); font-weight: 700; white-space: nowrap; }
+.cap-checks .unmet { color: var(--muted); white-space: nowrap; }
+.cap-checks .v { font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.cap-list { margin: 6px 0 0 20px; color: var(--text-2); font-size: 14.5px; line-height: 1.8; }
+.cap-note { color: var(--muted); font-size: 13px; margin-top: 12px; line-height: 1.6; }
+@media (max-width: 760px) {
+  .cap-panel { padding: 18px 14px; }
+  .cap-ladder { grid-template-columns: repeat(3, 1fr); }
+  .cap-summary tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .cap-summary tr:last-child { border-bottom: none; }
+  .cap-summary td { display: block; padding: 1px 0; border-bottom: none; }
+  .cap-checks { font-size: 13.5px; }
+  .cap-checks td, .cap-checks th { padding: 7px 6px; }
+}
 </style>
 """
 
@@ -321,7 +334,7 @@ def render_panel(raw: dict[str, pd.Series]) -> str:
     return f"""{_PANEL_CSS}
 <section class="category-section cap-panel" id="fed-capitulation">
   <div class="category-header">
-    <span class="category-name">🏳️ 연준 항복 판정</span>
+    <span class="category-name">연준 항복 판정</span>
     <span class="category-desc">대차대조표 · 금리정책(재정지배) · 제도 세 트랙으로 판정</span>
   </div>
   {summary}

@@ -23,13 +23,15 @@ from indicators.base import IndicatorResult
 
 # ── 차트 스타일 ────────────────────────────────────────────────────────
 THEME        = "plotly_dark"
-COLORS       = ["#00d4ff", "#ff6b6b", "#ffd166", "#06d6a0", "#a8dadc",
-                "#e9c46a", "#f4a261", "#e76f51", "#8ecae6", "#219ebc"]
-BG_COLOR     = "#0d1117"
-PAPER_COLOR  = "#161b22"
-GRID_COLOR   = "#21262d"
-FONT_COLOR   = "#c9d1d9"
-FONT_FAMILY  = "Inter, 'Nanum Gothic', sans-serif"
+# 차트마다 1번부터 고정 순서로 배정 (어두운 배경용 색맹 구분 검증 팔레트, 8색)
+COLORS       = ["#3987e5", "#d95926", "#199e70", "#c98500",
+                "#d55181", "#2fa52f", "#9085e9", "#e66767"]
+BG_COLOR     = "#181817"   # 카드 배경과 같게 — 복사한 PNG도 같은 배경
+PAPER_COLOR  = "#181817"
+GRID_COLOR   = "#2a2a28"
+AXIS_COLOR   = "#908e87"
+FONT_COLOR   = "#c3c2b7"
+FONT_FAMILY  = "'Pretendard Variable', Pretendard, -apple-system, 'Malgun Gothic', sans-serif"
 
 # ── 같은 차트에 겹칠 지표 그룹 정의 ──────────────────────────────────────
 # key: 대표 지표(y축 왼쪽), values: 같이 그릴 지표들
@@ -151,9 +153,9 @@ class ChartBuilder:
         # NET_LIQ 슬롯은 구성 요소(BS/RRP/TGA) 오버레이 처리
         chart_slots = self._inject_net_liq_components(chart_slots)
 
-        self._color_idx = 0
         figures = []
         for slot in chart_slots:
+            self._color_idx = 0
             fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
             self._add_slot_traces(fig, slot, 1)
             self._add_benchmark_overlays(fig, 1, self._benchmarks_for(slot[0].key))
@@ -194,7 +196,7 @@ class ChartBuilder:
                     y=series.values,
                     name=r.name_ko,
                     mode="lines",
-                    line=dict(color=color, width=1.8),
+                    line=dict(color=color, width=2),
                     fill="none",
                     hovertemplate=(
                         f"<b>{r.name_ko}</b><br>"
@@ -224,30 +226,31 @@ class ChartBuilder:
             # T10Y2Y: 0선 강조
             if slot[0].key == "T10Y2Y":
                 fig.add_hline(
-                    y=0, line_dash="dot", line_color="#ff6b6b", line_width=1,
+                    y=0, line_dash="dot", line_color="#ea5a52", line_width=1,
                     row=row, col=1,
                 )
             # NFCI·누적 순매수: 0선
             if slot[0].key == "NFCI" or (slot[0].key.startswith("KR_") and slot[0].key.endswith("_NET")):
                 fig.add_hline(
-                    y=0, line_dash="dot", line_color="#ffd166", line_width=1,
+                    y=0, line_dash="dot", line_color=AXIS_COLOR, line_width=1,
                     row=row, col=1,
                 )
             # 단기채 비중: 재무부가 통상 관리하는 15~20% 구간 음영
             if slot[0].key == "DEBT_SHORT_SHARE":
                 fig.add_hrect(
-                    y0=15, y1=20, fillcolor="#06d6a0", opacity=0.12, line_width=0,
+                    y0=15, y1=20, fillcolor="#199e70", opacity=0.14, line_width=0,
                     row=row, col=1,
                 )
 
     # ── 시장 벤치마크(S&P500·금 / 한국은 KOSPI) 오버레이 ──────────────
 
+    # 벤치마크는 배경 참고선 — 지표 색과 겹치지 않게 무채색 계열로 한 발 물러서 그림
     _BENCHMARKS = [
-        ("SPX",  "S&P500", "#f4a261", "dot"),
-        ("GOLD", "금",     "#ffd700", "dash"),
+        ("SPX",  "S&P500", "#a19f97", "dot"),
+        ("GOLD", "금",     "#b39a62", "dash"),
     ]
     _BENCHMARKS_KR = [
-        ("KOSPI", "KOSPI", "#e6edf3", "dot"),
+        ("KOSPI", "KOSPI", "#a19f97", "dot"),
     ]
 
     @classmethod
@@ -270,14 +273,14 @@ class ChartBuilder:
                     name=label,
                     mode="lines",
                     line=dict(color=color, width=1.2, dash=dash),
-                    opacity=0.6,
+                    opacity=0.75,
                     hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:,.0f}}<extra></extra>",
                 ),
                 row=row, col=1, secondary_y=True,
             )
         fig.update_yaxes(
             secondary_y=True, row=row, col=1,
-            showgrid=False, title_text="", tickfont=dict(size=9),
+            showgrid=False, zeroline=False, title_text="", tickfont=dict(size=10, color=AXIS_COLOR),
         )
 
     # ── NET_LIQ 구성 요소 오버레이 주입 ─────────────────────────────
@@ -323,13 +326,14 @@ class ChartBuilder:
     @staticmethod
     def _apply_layout(fig: go.Figure, height: int, title: str = "") -> None:
         # 가로폭은 컨테이너에 맞춤(모바일), 터치 드래그로 확대·이동 금지 → 페이지 스크롤 우선
-        fig.update_xaxes(fixedrange=True)
-        fig.update_yaxes(fixedrange=True)
+        fig.update_xaxes(fixedrange=True, zeroline=False, linecolor=GRID_COLOR,
+                         tickfont=dict(color=AXIS_COLOR, size=11))
+        fig.update_yaxes(fixedrange=True, zeroline=False, tickfont=dict(color=AXIS_COLOR, size=11))
         fig.update_layout(
             dragmode=False,
             height=height,
             template=THEME,
-            title=dict(text=title, font=dict(size=14), x=0.05, y=0.97),
+            title=dict(text=title, font=dict(size=13, color="#ecebe6"), x=0, xref="paper", y=0.97),
             paper_bgcolor=PAPER_COLOR,
             plot_bgcolor=BG_COLOR,
             font=dict(family=FONT_FAMILY, color=FONT_COLOR, size=12),
@@ -338,7 +342,10 @@ class ChartBuilder:
                 yanchor="bottom", y=1.0,
                 xanchor="left",  x=0,
                 font=dict(size=11),
+                bgcolor="rgba(0,0,0,0)",
             ),
+            hoverlabel=dict(bgcolor="#232321", bordercolor="#383835",
+                            font=dict(family=FONT_FAMILY, color="#ecebe6", size=12)),
             margin=dict(l=50, r=20, t=60, b=35),
             hovermode="x unified",
         )

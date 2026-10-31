@@ -61,8 +61,8 @@ class RecessionDashboard:
         print("\n[4/5]  HTML 대시보드 생성")
         HtmlExporter(
             figures, results, timestamp, cfg.CATEGORY_META,
-            page_title="📉 미국 경기침체 지표 대시보드",
-            sidebar_title="📉 침체 모니터",
+            page_title="미국 경기침체 지표 대시보드",
+            sidebar_title="침체 모니터",
             data_sources="FRED",
         ).export(cfg.OUTPUT_HTML)
 

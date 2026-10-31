@@ -149,8 +149,8 @@ class CombinedDashboard:
         print("\n[8/8]  HTML 대시보드 생성")
         HtmlExporter(
             figures, all_results, timestamp, category_meta,
-            page_title="🏦📉💵📈 미국 경기·유동성·물가·투자 통합 대시보드",
-            sidebar_title="📊 통합 모니터",
+            page_title="미국 경기·유동성·물가·투자 통합 대시보드",
+            sidebar_title="통합 매크로 모니터",
             data_sources="FRED · TreasuryDirect · NY Fed",
             sidebar_groups=[
                 ("유동성", list(liq_cfg.CATEGORY_META.keys())),
@@ -160,7 +160,7 @@ class CombinedDashboard:
                 ("한국", [cat + KR_OFFSET for cat in kr_cfg.CATEGORY_META.keys()]),
             ],
             top_panel=capitulation.render_panel(merged_raw),
-            top_nav=("🏳️ 연준 항복 판정", "fed-capitulation"),
+            top_nav=("연준 항복 판정", "fed-capitulation"),
         ).export(OUTPUT_HTML)
 
         TelegramSender(liq_cfg.TELEGRAM_TOKEN, liq_cfg.TELEGRAM_CHAT_ID).send_report(
