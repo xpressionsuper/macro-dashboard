@@ -35,11 +35,17 @@ FONT_FAMILY  = "Inter, 'Nanum Gothic', sans-serif"
 # key: 대표 지표(y축 왼쪽), values: 같이 그릴 지표들
 COMBINED_CHARTS: dict[str, list[str]] = {
     "BS":       ["UST", "MBS"],   # ① BS 차트에 UST, MBS 함께
+    "FED_COUPONS": ["FED_BILLS"],  # ① 연준 국채 보유 만기 구성: 중장기 + 단기
     "FEDFUNDS": ["DGS3MO"],       # ④ 기준금리 + 3개월물 국채 수익률 함께
     "SOFR":     ["IORB"],          # ④ SOFR 차트에 IORB 함께
     "DGS10":    ["DGS2"],          # ④ 10Y + 2Y 함께
     "HY_OAS":   ["BBB_OAS", "IG_OAS"],   # ④ 크레딧 스프레드: HY·BBB·IG 등급별 한 차트
     "NET_LIQ":  [],                # ③ 별도 처리
+    # 물가: 헤드라인 vs 근원
+    "CPI_ALL":  ["CPI_CORE", "STICKY"],
+    "PCE_ALL":  ["PCE_CORE"],
+    # 투자 ③ 정부부채: 단기·장기 국채 잔액
+    "DEBT_SHORT": ["DEBT_LONG"],
     # 한국 ①: 외국인·기관·개인·기타법인 한 차트 / ②: 기관 세부 7개 한 차트
     "KR_FOREIGN_NET": ["KR_INST_NET", "KR_INDIV_NET", "KR_CORP_NET"],
     "KR_PENSION_NET": ["KR_SECURITIES_NET", "KR_TRUST_NET", "KR_PE_NET",
@@ -54,7 +60,11 @@ COMBINED_CHARTS: dict[str, list[str]] = {
 }
 # 지표가 많아 이름을 이어 붙이면 너무 긴 차트의 제목
 SLOT_TITLES: dict[str, str] = {
+    "FED_COUPONS":    "연준 국채 보유 (중장기 · 단기)",
     "HY_OAS":         "크레딧 스프레드 (HY · BBB · IG)",
+    "CPI_ALL":        "소비자물가 (헤드라인 · 근원 · 끈적한 물가, YoY)",
+    "PCE_ALL":        "PCE 물가 (헤드라인 · 근원, YoY)",
+    "DEBT_SHORT":     "국채 잔액 (단기 · 장기)",
     "KR_FOREIGN_NET": "외국인 누적 순매수",
     "KR_PENSION_NET": "기관 세부 수급",
     "KR_BOP_TOTAL_NET": "외국인 증권투자자금 유출입 (누적, 달러)",
@@ -65,10 +75,7 @@ SLOT_TITLES: dict[str, str] = {
 # (FRED의 ICE BofA 스프레드는 최근 약 3년치만 공개)
 CROP_TO_DATA: set[str] = {"HY_OAS"}
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
-SKIP_SOLO: set[str] = {"UST", "MBS", "DGS3MO", "IORB", "DGS2", "BBB_OAS", "IG_OAS"}.union(
-    *(COMBINED_CHARTS[k] for k in ("KR_FOREIGN_NET", "KR_PENSION_NET", "KR_APT_GANGNAM",
-                                   "KR_APT_BUNDANG", "KR_BOP_TOTAL_NET"))
-)
+SKIP_SOLO: set[str] = set().union(*COMBINED_CHARTS.values())
 
 # y축 눈금 상한 고정 (0 ~ 지정값) — 없는 지표는 자동 스케일 유지
 Y_MAX_OVERRIDE: dict[str, float] = {
@@ -152,7 +159,7 @@ class ChartBuilder:
             self._add_benchmark_overlays(fig, 1, self._benchmarks_for(slot[0].key))
             title = SLOT_TITLES.get(slot[0].key) or " & ".join(r.name_ko for r in slot)
             self._apply_layout(fig, height=330, title=title)
-            if len(fig.data) > 4:   # 선이 많아 범례가 여러 줄이면 제목과 겹치므로 차트 아래로
+            if sum(len(t.name or "") for t in fig.data) > 40:   # 범례가 길어 여러 줄이 되면 제목과 겹치므로 차트 아래로
                 fig.update_layout(height=380, legend=dict(yanchor="top", y=-0.12),
                                   margin=dict(t=40, b=90))
             if slot[0].key in CROP_TO_DATA:
