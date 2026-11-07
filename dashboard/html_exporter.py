@@ -101,6 +101,9 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
                 color: var(--accent); background: var(--accent-bg);
                 padding: 0 7px; border-radius: 999px; margin-left: 2px; }
 .row-date.newest { color: var(--text-2); }
+.nav-new { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px;
+           font-size: 11px; font-weight: 600; line-height: 1.6; text-align: center;
+           color: var(--accent); background: var(--accent-bg); border-radius: 999px; }
 .row-desc  { flex: 1 1 260px; min-width: 220px; }
 .row-head  { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap;
              margin-bottom: 8px; }
@@ -312,7 +315,7 @@ class HtmlExporter:
             items = "\n".join(self._build_sidebar_group(label, cats) for label, cats in self._sidebar_groups)
         else:
             items = "\n".join(
-                f'<a class="nav-item" href="#cat-{cat}">{name}</a>'
+                f'<a class="nav-item" href="#cat-{cat}">{name}{self._nav_new_badge(cat)}</a>'
                 for cat, (name, _, _) in self._category_meta.items()
             )
         if self._top_nav:
@@ -326,10 +329,18 @@ class HtmlExporter:
 
     def _build_sidebar_group(self, label: str, cats: list[int]) -> str:
         rows = "\n".join(
-            f'<a class="nav-item" href="#cat-{cat}">{self._category_meta[cat][0]}</a>'
+            f'<a class="nav-item" href="#cat-{cat}">{self._category_meta[cat][0]}{self._nav_new_badge(cat)}</a>'
             for cat in cats if cat in self._category_meta
         )
         return f'<div class="nav-group">{label}</div>{rows}'
+
+    def _nav_new_badge(self, cat: int) -> str:
+        """카테고리 안에서 1주일 이내 발표된 차트 수 — 본문 '최신' 배지와 같은 기준."""
+        n = sum(
+            self._is_within_a_week(self._resolve_row_meta(slot).released_date)
+            for _, slot in self._figures.get(cat, [])
+        )
+        return f' <span class="nav-new" title="최근 1주일 내 업데이트 {n}건">{n}</span>' if n else ""
 
     # ── 메인 콘텐츠 ──────────────────────────────────────────────────
 
