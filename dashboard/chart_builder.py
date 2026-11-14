@@ -248,6 +248,7 @@ class ChartBuilder:
     _BENCHMARKS = [
         ("SPX",  "S&P500", "#a19f97", "dot"),
         ("GOLD", "금",     "#b39a62", "dash"),
+        ("DGS10", "미국 10년물", "#7f9bb3", "dashdot"),   # 단위가 %라 별도 축(y3)에 그림
     ]
     _BENCHMARKS_KR = [
         ("KOSPI", "KOSPI", "#a19f97", "dot"),
@@ -264,7 +265,18 @@ class ChartBuilder:
         """차트 오른쪽 보조축에 벤치마크 가격을 겹쳐 그립니다."""
         for key, label, color, dash in benchmarks:
             series = self._raw.get(key, pd.Series(dtype=float))
-            if series.empty:
+            if series is None or series.empty:
+                continue
+            if key == "DGS10":
+                # 가격(수천 단위) 축에 올리면 바닥에 붙으므로 눈금 없는 세 번째 축 — 값은 마우스 오버로 확인
+                if any(t.name == "10년물 국채금리" for t in fig.data):
+                    continue   # 10년물 자체 차트엔 중복으로 그리지 않음
+                fig.add_trace(go.Scatter(
+                    x=series.index, y=series.values, name=label, mode="lines", yaxis="y3",
+                    line=dict(color=color, width=1.2, dash=dash), opacity=0.75,
+                    hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:.2f}}%<extra></extra>",
+                ))
+                fig.update_layout(yaxis3=dict(overlaying="y", side="right", visible=False, fixedrange=True))
                 continue
             fig.add_trace(
                 go.Scatter(
