@@ -111,6 +111,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--font);
 .row-en    { font-size: 12px; color: var(--muted); letter-spacing: 0; }
 .row-val   { font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.02em;
              font-variant-numeric: tabular-nums; margin-right: 4px; }
+.row-val.sm { font-size: 17px; }
+.row-sub   { font-size: 13px; color: var(--text-2); min-width: 0; }
 .row-date  { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .row-chg   { font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums;
              padding: 1px 8px; border-radius: 999px; }
@@ -396,7 +398,7 @@ class HtmlExporter:
             row_cls = "indicator-row newest" if is_newest else "indicator-row"
             rows.append(f"""
 <div class="{row_cls}">
-  {self._build_row_desc(primary, is_newest=is_newest)}
+  {self._build_row_desc(primary, is_newest=is_newest, series=slot_results)}
   <div class="row-chart"><div class="chart-wrap">{chart_div}</div></div>
   {self._build_row_updown(primary)}
 </div>""")
@@ -468,18 +470,25 @@ class HtmlExporter:
         return f"{r.chg_disp_label} {sign}{r.chg_disp:.2f}{suffix}"
 
     @classmethod
-    def _build_row_desc(cls, r: IndicatorResult, is_newest: bool = False) -> str:
+    def _build_row_desc(cls, r: IndicatorResult, is_newest: bool = False,
+                        series: Optional[list[IndicatorResult]] = None) -> str:
         latest_str = cls._fmt_value(r)
         # 월간 통계(국제수지)는 날짜가 매달 1일로 붙어 '8월 1일 하루치'로 오해되므로 월로 표시
         date_str = r.latest_date
         if r.key.startswith("KR_BOP_") and r.latest_date[:4].isdigit():
             date_str = f"{r.latest_date[:4]}년 {int(r.latest_date[5:7])}월"
 
-        chg_badge = ""
-        chg = cls._fmt_chg(r)
-        if chg:
-            chg_cls = "up" if r.chg_disp >= 0 else "down"
-            chg_badge = f'<span class="row-chg {chg_cls}">{chg}</span>'
+        chg_badge = cls._chg_badge(r)
+        # 겹쳐 그린 차트는 첫 지표 숫자만 보이면 나머지를 알 수 없으므로 지표마다 값·증감을 한 줄씩
+        if series and len(series) > 1:
+            val_rows = "".join(
+                f'<div class="row-head"><span class="row-sub">{s.name_ko}</span>'
+                f'<span class="row-val sm">{cls._fmt_value(s)}</span>{cls._chg_badge(s)}</div>'
+                for s in series
+            )
+            chg_badge = ""
+        else:
+            val_rows = f'<div class="row-head"><span class="row-val">{latest_str}</span></div>'
         copy_btn = (
             '<button class="copy-btn" type="button" aria-label="차트 이미지 복사">'
             '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">'
@@ -503,9 +512,7 @@ class HtmlExporter:
     <span class="row-en">{r.name_en}</span>
     {copy_btn}
   </div>
-  <div class="row-head">
-    <span class="row-val">{latest_str}</span>
-  </div>
+  {val_rows}
   <div class="row-head">
     <span class="row-date">기준일: {date_str}</span>
     {released_str}
@@ -513,6 +520,13 @@ class HtmlExporter:
   </div>
   <div class="row-text">{r.description}</div>
 </div>"""
+
+    @classmethod
+    def _chg_badge(cls, r: IndicatorResult) -> str:
+        chg = cls._fmt_chg(r)
+        if not chg:
+            return ""
+        return f'<span class="row-chg {"up" if r.chg_disp >= 0 else "down"}">{chg}</span>'
 
     @staticmethod
     def _build_row_updown(r: IndicatorResult) -> str:
