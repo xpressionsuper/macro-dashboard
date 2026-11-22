@@ -177,23 +177,37 @@ _JS_NAV = """
   var sections = document.querySelectorAll('.category-section');
   var navItems = document.querySelectorAll('.nav-item');
 
-  // 메뉴는 #앵커 링크라 이동은 브라우저가 처리 — 여기선 현재 위치 표시만
-  var observer = new IntersectionObserver(function (entries) {
-    entries.forEach(function (e) {
-      if (e.isIntersecting) {
-        navItems.forEach(function (n) {
-          var on = n.getAttribute('href') === '#' + e.target.id;
-          n.classList.toggle('active', on);
-          // 모바일 가로 메뉴: 현재 항목이 화면 밖이면 보이도록 옆으로 밀어줌
-          if (on && n.parentNode.scrollWidth > n.parentNode.clientWidth) {
-            n.parentNode.scrollTo({ left: n.offsetLeft - 16, behavior: 'smooth' });
-          }
-        });
-      }
+  // 메뉴는 #앵커 링크라 이동은 브라우저가 처리 — 여기선 현재 위치 표시만.
+  // 섹션이 화면보다 몇 배 길면 'N% 보일 때' 방식은 끝내 안 걸리므로, 화면 위쪽을 지난 마지막 섹션을 현재로 봄
+  var targets = Array.prototype.map.call(navItems, function (n) {
+    return document.getElementById(n.getAttribute('href').slice(1));
+  });
+  var current = null, ticking = false;
+  function setActive(n) {
+    if (n === current) return;
+    current = n;
+    navItems.forEach(function (m) { m.classList.toggle('active', m === n); });
+    // 모바일 가로 메뉴: 현재 항목이 화면 밖이면 보이도록 옆으로 밀어줌
+    if (n && n.parentNode.scrollWidth > n.parentNode.clientWidth) {
+      n.parentNode.scrollTo({ left: n.offsetLeft - 16, behavior: 'smooth' });
+    }
+  }
+  function update() {
+    ticking = false;
+    var line = window.innerHeight * 0.3, pick = null;
+    targets.forEach(function (t, i) {
+      if (t && t.getBoundingClientRect().top <= line) pick = navItems[i];
     });
-  }, { threshold: 0.2 });
-
-  sections.forEach(function (s) { observer.observe(s); });
+    // 맨 아래까지 내리면 마지막 섹션 위가 기준선에 못 닿을 수 있음
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
+      pick = navItems[navItems.length - 1];
+    }
+    setActive(pick);
+  }
+  window.addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
 
   // 지표별 복사 버튼 — 차트를 PNG 이미지로.
   // PC: 클립보드에 바로 넣음 / 휴대폰: 모바일 브라우저는 이미지 클립보드 쓰기가 불안정해서
