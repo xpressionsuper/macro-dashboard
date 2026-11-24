@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 20
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy_retry.outputs.page_url }}
 
     steps:
       - name: 코드 체크아웃
@@ -62,6 +62,17 @@ jobs:
         with:
           path: site
 
+      # 업로드 직후 GitHub가 아티팩트를 못 찾아 "Found 0 artifact(s)"로 실패하는 일이 가끔 있음 → 30초 뒤 한 번 더
       - name: GitHub Pages 배포
         id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: 배포 재시도 전 대기
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 30
+
+      - name: GitHub Pages 배포 (재시도)
+        id: deploy_retry
+        if: steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v4
