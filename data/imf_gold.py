@@ -1,9 +1,10 @@
 """
-data/imf_gold.py ─ IMF International Liquidity(IL) 국가별 중앙은행 금 보유량 → 누적 순매입(톤)
+data/imf_gold.py ─ IMF International Liquidity(IL) 국가별 중앙은행 금 보유량 → 누적 순매입·보유량(톤)
 =====================================================================
 IMF가 각국 신고를 받아 매달 갱신하는 금 보유량(RGV_REVS, 순금 트로이온스)을
-키 없이 SDMX API로 받아, 국가별로 CB_GOLD_BASE_MONTH 말 보유량 대비 증감
-(그 달 이전 기록이 없으면 첫 기록 대비)을 톤 단위로 만듭니다.
+키 없이 SDMX API로 받아, 톤 단위로 바꿉니다. CB_GOLD_GROUPS 설정에 따라
+CB_GOLD_BASE_MONTH 말 보유량 대비 증감(그 달 이전 기록이 없으면 첫 기록 대비)이나
+그 달 이후 보유량 그대로를 씁니다.
 미보고 매입 추정치가 들어간 WGC 집계와는 다릅니다.
 
 자체 점검: python -m data.imf_gold
@@ -58,14 +59,17 @@ def build(holdings: pd.Series, base_month: str) -> pd.Series:
 
 def load() -> dict[str, pd.Series]:
     """지표 키 → 시계열. 실패한 나라는 빈 시리즈."""
-    groups = inv_cfg.CB_GOLD_GROUPS
-    holdings = fetch_holdings(sorted({c for countries in groups.values() for c in countries}))
+    groups, base = inv_cfg.CB_GOLD_GROUPS, inv_cfg.CB_GOLD_BASE_MONTH
+    holdings = fetch_holdings(sorted({c for countries, _ in groups.values() for c in countries}))
     raw = {}
-    for prefix, countries in groups.items():
+    for prefix, (countries, cumulative) in groups.items():
         for code in countries:
             key = f"{prefix}{code}"
-            raw[key] = (build(holdings[code], inv_cfg.CB_GOLD_BASE_MONTH) if code in holdings
-                        else pd.Series(dtype=float)).rename(key)
+            if code not in holdings:
+                raw[key] = pd.Series(dtype=float, name=key)
+                continue
+            s = holdings[code]
+            raw[key] = (build(s, base) if cumulative else s.dropna().sort_index()[base:]).rename(key)
     return raw
 
 

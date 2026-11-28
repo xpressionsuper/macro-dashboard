@@ -48,7 +48,7 @@ COMBINED_CHARTS: dict[str, list[str]] = {
     "PCE_ALL":  ["PCE_CORE"],
     # 투자 ③ 정부부채: 단기·장기 국채 잔액
     "DEBT_SHORT": ["DEBT_LONG"],
-    # 투자 ④ 중앙은행 금: 순매입 상위 8개국 한 차트 / GDP 상위 10개국 한 차트
+    # 투자 ④ 중앙은행 금: 순매입 상위 8개국 누적 순매입 한 차트 / GDP 상위 10개국 보유량 한 차트
     "CB_GOLD_CUM_CHN": [f"CB_GOLD_CUM_{c}" for c in ("RUS", "TUR", "POL", "UZB", "IND", "KAZ", "IRQ")],
     "CB_GOLD_GDP_USA": [f"CB_GOLD_GDP_{c}" for c in ("CHN", "DEU", "JPN", "GBR", "IND", "FRA", "RUS", "ITA", "CAN")],
     # 한국 ①: 외국인·기관·개인·기타법인 한 차트 / ②: 기관 세부 7개 한 차트
@@ -71,7 +71,7 @@ SLOT_TITLES: dict[str, str] = {
     "PCE_ALL":        "PCE 물가 (헤드라인 · 근원, YoY)",
     "DEBT_SHORT":     "국채 잔액 (단기 · 장기)",
     "CB_GOLD_CUM_CHN": "국가별 중앙은행 금 누적 순매입 (2010년~, 톤)",
-    "CB_GOLD_GDP_USA": "GDP 상위 10개국 중앙은행 금 누적 순매입 (2010년~, 톤)",
+    "CB_GOLD_GDP_USA": "GDP 상위 10개국 중앙은행 금 보유량 (톤)",
     "KR_FOREIGN_NET": "외국인 누적 순매수",
     "KR_PENSION_NET": "기관 세부 수급",
     "KR_BOP_TOTAL_NET": "외국인 증권투자자금 유출입 (누적, 달러)",

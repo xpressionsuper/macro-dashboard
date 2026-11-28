@@ -155,33 +155,34 @@ CB_GOLD_GDP_COUNTRIES: dict[str, tuple[str, str]] = {
     "ITA": ("이탈리아", "Italy"),
     "CAN": ("캐나다", "Canada"),
 }
-_GDP_DESC = ("세계 GDP 상위 10개국(IMF 2025년 명목 GDP 기준)의 중앙은행 금 누적 순매입입니다. 계산 방법은 위 차트와 같습니다. "
-             "미국·영국·프랑스·이탈리아는 2010년 이후 보유량이 거의 그대로라 선이 0에 붙어 있습니다. "
-             "이 나라들은 이미 수천 톤(영국은 약 300톤)을 갖고 있어 새로 살 이유가 적었습니다. "
-             "독일이 조금 마이너스인 건 기념주화 제작용 금을 정부에 넘겨 온 몫이고, 캐나다는 2016년까지 금을 모두 팔아 보유량이 0입니다. "
-             "같은 기간 매입은 대부분 중국·러시아·인도 같은 신흥국에서 나왔습니다.")
+_GDP_DESC = ("세계 GDP 상위 10개국(IMF 2025년 명목 GDP 기준)의 중앙은행 금 보유량입니다. 2010년 이후 구간만 그렸습니다. "
+             "미국·독일·이탈리아·프랑스는 이미 수천 톤을 가진 채 거의 평평하고, 중국·러시아·인도는 아래에서 올라오며 격차를 좁혀 왔습니다. "
+             "독일이 조금씩 줄어든 건 기념주화 제작용 금을 정부에 넘겨 온 몫이고, 캐나다는 2016년까지 금을 모두 팔아 보유량이 0입니다. "
+             "러시아는 2025년 말 이후 신고가 끊겨 선이 멈춰 있습니다. 신고된 수치 기준이라 미보고 매입은 빠져 있습니다.")
 
 
-def _gold(prefix: str, countries: dict, desc: str, code: str, idx: int) -> IndicatorMeta:
+def _gold(prefix: str, countries: dict, desc: str, what: str, code: str, idx: int) -> IndicatorMeta:
     name, name_en = countries[code]
     first = idx == 0   # 설명은 차트당 한 번만 (나머지 나라는 같은 설명이라 비워 둠)
     if first:
         name_en = "By Country"   # 첫 지표의 영문명이 차트 부제로 쓰임
     return IndicatorMeta(
-        key=f"{prefix}{code}", name_ko=name, name_en=f"{name_en} Central Bank Gold — Cumulative Net Purchases since 2010",
+        key=f"{prefix}{code}", name_ko=name, name_en=f"{name_en} Central Bank Gold — {what}",
         description=desc if first else "", direction="↑금 보유 확대", source=_GOLD_SOURCE, category=4,
         unit="t", chg_as_point=True, when_up=_GOLD_UP, when_down=_GOLD_DOWN,
     )
 
 
-# 지표 키 접두어 → 나라 목록 (같은 나라가 두 차트에 다 나오면 키만 다르고 값은 같음)
-CB_GOLD_GROUPS: dict[str, dict[str, tuple[str, str]]] = {
-    "CB_GOLD_CUM_": CB_GOLD_COUNTRIES,
-    "CB_GOLD_GDP_": CB_GOLD_GDP_COUNTRIES,
+# 지표 키 접두어 → (나라 목록, True=2010년 이후 누적 순매입 / False=보유량 그대로)
+CB_GOLD_GROUPS: dict[str, tuple[dict[str, tuple[str, str]], bool]] = {
+    "CB_GOLD_CUM_": (CB_GOLD_COUNTRIES, True),
+    "CB_GOLD_GDP_": (CB_GOLD_GDP_COUNTRIES, False),
 }
 CB_GOLD: list[IndicatorMeta] = (
-    [_gold("CB_GOLD_CUM_", CB_GOLD_COUNTRIES, _CUM_DESC, c, i) for i, c in enumerate(CB_GOLD_COUNTRIES)]
-    + [_gold("CB_GOLD_GDP_", CB_GOLD_GDP_COUNTRIES, _GDP_DESC, c, i) for i, c in enumerate(CB_GOLD_GDP_COUNTRIES)]
+    [_gold("CB_GOLD_CUM_", CB_GOLD_COUNTRIES, _CUM_DESC, "Cumulative Net Purchases since 2010", c, i)
+     for i, c in enumerate(CB_GOLD_COUNTRIES)]
+    + [_gold("CB_GOLD_GDP_", CB_GOLD_GDP_COUNTRIES, _GDP_DESC, "Gold Reserves", c, i)
+       for i, c in enumerate(CB_GOLD_GDP_COUNTRIES)]
 )
 
 
@@ -203,7 +204,7 @@ CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
     ),
     4: (
         "④ 중앙은행 금 매입",
-        "각국 중앙은행이 IMF에 신고한 금 보유량 기준 2010년 이후 누적 순매입 — 순매입 상위 8개국 · GDP 상위 10개국 (톤, 월간)",
+        "각국 중앙은행이 IMF에 신고한 금 보유량 기준 2010년 이후 순매입 상위 8개국의 누적 순매입과 GDP 상위 10개국의 보유량 (톤, 월간)",
         CB_GOLD,
     ),
 }
