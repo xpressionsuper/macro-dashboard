@@ -115,18 +115,36 @@ GOV_DEBT: list[IndicatorMeta] = [
 #  IMF International Liquidity 국가별 금 보유량 (data/imf_gold.py, 키 불필요)
 # ══════════════════════════════════════════════════════════════════════
 CB_GOLD_BASE_MONTH = "2009-12"   # 이 달 말 보유량을 0으로 두고 누적 (2010년부터 중앙은행이 순매수로 전환)
+CB_GOLD_TOP_N = 10               # 차트마다 나라 수. 순위는 매 실행마다 새로 뽑음 (data/imf_gold.py)
 
-# IMF 국가 코드 → 이름. 2010년 이후 순매입 상위 8개국, 차트 색은 이 순서대로 고정.
-# 첫 나라가 카드의 기준일을 정하므로 신고가 끊긴 러시아(2025-11~)가 아니라 중국을 맨 앞에 둠
-CB_GOLD_COUNTRIES: dict[str, tuple[str, str]] = {
-    "CHN": ("중국", "China"),
-    "RUS": ("러시아", "Russia"),
-    "TUR": ("튀르키예", "Turkey"),
-    "POL": ("폴란드", "Poland"),
-    "UZB": ("우즈베키스탄", "Uzbekistan"),
-    "IND": ("인도", "India"),
-    "KAZ": ("카자흐스탄", "Kazakhstan"),
-    "IRQ": ("이라크", "Iraq"),
+# IMF 금 보유량에 있지만 나라가 아닌 3글자 코드 — 순위에서 뺌 (G로 시작하는 지역 합계는 코드 길이로 걸러짐)
+CB_GOLD_NON_COUNTRIES = {
+    "BIS",   # 국제결제은행
+    "IMF",   # 국제통화기금
+    "EZB",   # 유럽중앙은행
+    "BCE",   # 서아프리카 중앙은행
+    "BEA",   # 중앙아프리카 중앙은행
+}
+
+# GDP 순위 조회(IMF WEO)가 실패했을 때 쓸 목록 (2025년 명목 GDP 순)
+CB_GOLD_GDP_FALLBACK = ["USA", "CHN", "DEU", "JPN", "GBR", "IND", "FRA", "RUS", "ITA", "CAN"]
+
+# IMF 국가 코드 → 한글 이름. 순위에 새로 들어온 나라가 여기 없으면 코드 그대로 표시되니 추가하면 됨
+CB_GOLD_NAMES: dict[str, str] = {
+    "USA": "미국", "CHN": "중국", "DEU": "독일", "JPN": "일본", "GBR": "영국", "IND": "인도", "FRA": "프랑스",
+    "RUS": "러시아", "ITA": "이탈리아", "CAN": "캐나다", "BRA": "브라질", "ESP": "스페인", "KOR": "한국",
+    "MEX": "멕시코", "AUS": "호주", "IDN": "인도네시아", "TUR": "튀르키예", "SAU": "사우디아라비아",
+    "NLD": "네덜란드", "CHE": "스위스", "POL": "폴란드", "TWN": "대만", "BEL": "벨기에", "SWE": "스웨덴",
+    "ARG": "아르헨티나", "IRL": "아일랜드", "AUT": "오스트리아", "THA": "태국", "ARE": "아랍에미리트",
+    "NOR": "노르웨이", "ISR": "이스라엘", "SGP": "싱가포르", "PHL": "필리핀", "VNM": "베트남",
+    "MYS": "말레이시아", "BGD": "방글라데시", "EGY": "이집트", "ZAF": "남아공", "UZB": "우즈베키스탄",
+    "KAZ": "카자흐스탄", "IRQ": "이라크", "QAT": "카타르", "HUN": "헝가리", "CZE": "체코", "SRB": "세르비아",
+    "KGZ": "키르기스스탄", "MNG": "몽골", "GHA": "가나", "JOR": "요르단", "LBY": "리비아", "PRT": "포르투갈",
+    "GRC": "그리스", "COL": "콜롬비아", "CHL": "칠레", "PER": "페루", "PAK": "파키스탄", "NGA": "나이지리아",
+    "DZA": "알제리", "KWT": "쿠웨이트", "LBN": "레바논", "VEN": "베네수엘라", "ECU": "에콰도르",
+    "SVK": "슬로바키아", "ROU": "루마니아", "UKR": "우크라이나", "BLR": "벨라루스", "AZE": "아제르바이잔",
+    "TJK": "타지키스탄", "MAR": "모로코", "DNK": "덴마크", "FIN": "핀란드", "NZL": "뉴질랜드", "HKG": "홍콩",
+    "OMN": "오만", "BHR": "바레인", "CYP": "키프로스", "GTM": "과테말라", "KHM": "캄보디아", "LKA": "스리랑카",
 }
 
 _GOLD_SOURCE = "IMF International Liquidity (금 보유량, 순금 트로이온스 → 톤)"
@@ -135,54 +153,33 @@ _GOLD_UP = ("달러 자산 의존을 줄이려는 외환보유액 다변화, 제
 _GOLD_DOWN = ("외환보유액이 부족해 금을 팔아 달러를 마련하거나(환율 방어), 금 가격 급등기에 차익을 실현할 때 줄어듭니다. "
               "우즈베키스탄·카자흐스탄처럼 국내 금광 생산분을 사들였다가 시세에 따라 되파는 나라는 매달 출렁임이 큽니다.")
 _CUM_DESC = ("IMF에 각국 중앙은행이 신고한 금 보유량을 2009년 말과 비교한 값입니다. 2010년부터 쌓아 온 순매입량이라 보면 됩니다. "
+             "어느 나라가 들어갈지는 매 실행마다 최신 데이터로 순매입이 많은 순서대로 다시 뽑습니다(국제기구 제외). "
              "세계금협회(WGC)는 신고되지 않은 매입까지 추정해 합치지만, 이 차트는 신고된 수치만 씁니다. "
              "그래서 미보고 매입이 많은 2022년 이후 국가 합계는 WGC 집계보다 작게 나옵니다. "
              "러시아는 2025년 말 이후 신고가 끊겨 선이 멈춰 있고, 튀르키예는 시중은행이 맡긴 금과 스와프 물량이 섞여 있어 출렁임이 큽니다. "
              "각국 신고가 IMF에 반영되기까지 보통 1~2개월이 걸립니다.")
+_GDP_DESC = ("IMF 세계경제전망(WEO)의 지난해 명목 GDP 기준 상위 10개국의 중앙은행 금 보유량입니다. 2010년 이후 구간만 그렸고, "
+             "GDP 순위도 매 실행마다 다시 확인합니다. "
+             "미국·독일·이탈리아·프랑스는 1950~60년대 브레턴우즈 체제 때 쌓은 금을 그대로 가진 채 거의 평평하고, "
+             "중국·러시아·인도는 아래에서 올라오며 격차를 좁혀 왔습니다. "
+             "독일이 조금씩 줄어든 건 기념주화 제작용 금을 정부에 넘겨 온 몫입니다. "
+             "신고된 수치 기준이라 미보고 매입은 빠져 있습니다.")
 
 
-# GDP 상위 10개국 (IMF WEO 2025년 명목 GDP 순서, 차트 색도 이 순서로 고정).
-# ponytail: 고정 목록 — 순위가 바뀌면 손으로 고침 (매번 새로 뽑으면 나라·색이 바뀌어 차트를 비교하기 어려움)
-CB_GOLD_GDP_COUNTRIES: dict[str, tuple[str, str]] = {
-    "USA": ("미국", "United States"),
-    "CHN": ("중국", "China"),
-    "DEU": ("독일", "Germany"),
-    "JPN": ("일본", "Japan"),
-    "GBR": ("영국", "United Kingdom"),
-    "IND": ("인도", "India"),
-    "FRA": ("프랑스", "France"),
-    "RUS": ("러시아", "Russia"),
-    "ITA": ("이탈리아", "Italy"),
-    "CAN": ("캐나다", "Canada"),
-}
-_GDP_DESC = ("세계 GDP 상위 10개국(IMF 2025년 명목 GDP 기준)의 중앙은행 금 보유량입니다. 2010년 이후 구간만 그렸습니다. "
-             "미국·독일·이탈리아·프랑스는 이미 수천 톤을 가진 채 거의 평평하고, 중국·러시아·인도는 아래에서 올라오며 격차를 좁혀 왔습니다. "
-             "독일이 조금씩 줄어든 건 기념주화 제작용 금을 정부에 넘겨 온 몫이고, 캐나다는 2016년까지 금을 모두 팔아 보유량이 0입니다. "
-             "러시아는 2025년 말 이후 신고가 끊겨 선이 멈춰 있습니다. 신고된 수치 기준이라 미보고 매입은 빠져 있습니다.")
-
-
-def _gold(prefix: str, countries: dict, desc: str, what: str, code: str, idx: int) -> IndicatorMeta:
-    name, name_en = countries[code]
-    first = idx == 0   # 설명은 차트당 한 번만 (나머지 나라는 같은 설명이라 비워 둠)
-    if first:
-        name_en = "By Country"   # 첫 지표의 영문명이 차트 부제로 쓰임
+def _gold(prefix: str, desc: str, what: str, rank: int) -> IndicatorMeta:
+    """순위 자리 하나. 어느 나라인지(name_ko)는 실행할 때 data/imf_gold.py가 채움."""
+    first = rank == 1   # 설명은 차트당 한 번만 (나머지 자리는 같은 설명이라 비워 둠)
     return IndicatorMeta(
-        key=f"{prefix}{code}", name_ko=name, name_en=f"{name_en} Central Bank Gold — {what}",
+        key=f"{prefix}{rank}", name_ko=f"{rank}위", name_en=f"By Country Central Bank Gold — {what}",
         description=desc if first else "", direction="↑금 보유 확대", source=_GOLD_SOURCE, category=4,
         unit="t", chg_as_point=True, when_up=_GOLD_UP, when_down=_GOLD_DOWN,
     )
 
 
-# 지표 키 접두어 → (나라 목록, True=2010년 이후 누적 순매입 / False=보유량 그대로)
-CB_GOLD_GROUPS: dict[str, tuple[dict[str, tuple[str, str]], bool]] = {
-    "CB_GOLD_CUM_": (CB_GOLD_COUNTRIES, True),
-    "CB_GOLD_GDP_": (CB_GOLD_GDP_COUNTRIES, False),
-}
+_RANKS = range(1, CB_GOLD_TOP_N + 1)
 CB_GOLD: list[IndicatorMeta] = (
-    [_gold("CB_GOLD_CUM_", CB_GOLD_COUNTRIES, _CUM_DESC, "Cumulative Net Purchases since 2010", c, i)
-     for i, c in enumerate(CB_GOLD_COUNTRIES)]
-    + [_gold("CB_GOLD_GDP_", CB_GOLD_GDP_COUNTRIES, _GDP_DESC, "Gold Reserves", c, i)
-       for i, c in enumerate(CB_GOLD_GDP_COUNTRIES)]
+    [_gold("CB_GOLD_CUM_", _CUM_DESC, "Cumulative Net Purchases since 2010", r) for r in _RANKS]
+    + [_gold("CB_GOLD_GDP_", _GDP_DESC, "Gold Reserves of the 10 Largest Economies", r) for r in _RANKS]
 )
 
 
@@ -204,7 +201,7 @@ CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
     ),
     4: (
         "④ 중앙은행 금 매입",
-        "각국 중앙은행이 IMF에 신고한 금 보유량 기준 2010년 이후 순매입 상위 8개국의 누적 순매입과 GDP 상위 10개국의 보유량 (톤, 월간)",
+        "각국 중앙은행이 IMF에 신고한 금 보유량 기준 2010년 이후 순매입 상위 10개국의 누적 순매입과 GDP 상위 10개국의 보유량 (톤, 월간 · 순위는 매 실행마다 갱신)",
         CB_GOLD,
     ),
 }

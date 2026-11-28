@@ -276,11 +276,13 @@ class CombinedDashboard:
 
     @staticmethod
     def _fetch_imf_gold() -> dict[str, pd.Series]:
-        """IMF 국가별 중앙은행 금 보유량 → 2010년 이후 누적 순매입(톤). 키 불필요."""
+        """IMF 국가별 금 보유량 → 순매입 상위·GDP 상위 국가 (순위는 매번 새로 뽑음). 키 불필요."""
         try:
-            raw = imf_gold.load()
+            raw, names = imf_gold.load()
+            for meta in inv_cfg.CB_GOLD:   # 순위 자리("1위")에 이번에 뽑힌 나라 이름을 붙임
+                meta.name_ko = names.get(meta.key, meta.name_ko)
             for key, s in raw.items():
-                print(f"  {'✅' if len(s) else '❌'}  {key:<36} [IMF IL]  {len(s)} pts")
+                print(f"  {'✅' if len(s) else '❌'}  {key:<20} {names[key]:<12} [IMF IL]  {len(s)} pts")
             return raw
         except Exception as exc:
             print(f"  ❌  {'중앙은행 금 보유량':<30} [IMF IL]  최종 실패 → {exc}")

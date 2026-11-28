@@ -489,8 +489,10 @@ class HtmlExporter:
         latest_str = cls._fmt_value(r)
         # 월간 통계(국제수지)는 날짜가 매달 1일로 붙어 '8월 1일 하루치'로 오해되므로 월로 표시
         date_str = r.latest_date
-        if r.key.startswith("KR_BOP_") and r.latest_date[:4].isdigit():
-            date_str = f"{r.latest_date[:4]}년 {int(r.latest_date[5:7])}월"
+        if series and len(series) > 1:   # 겹쳐 그린 차트는 첫 지표가 아니라 가장 최근 값의 날짜 (신고가 끊긴 나라가 맨 앞일 수 있음)
+            date_str = max((s.latest_date for s in series if s.latest_date[:4].isdigit()), default=date_str)
+        if r.key.startswith(("KR_BOP_", "CB_GOLD_")) and date_str[:4].isdigit():
+            date_str = f"{date_str[:4]}년 {int(date_str[5:7])}월"
 
         chg_badge = cls._chg_badge(r)
         # 겹쳐 그린 차트는 첫 지표 숫자만 보이면 나머지를 알 수 없으므로 지표마다 값·증감을 한 줄씩
