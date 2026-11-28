@@ -46,7 +46,7 @@ import config_korea as kr_cfg
 from data.fred_client      import FredClient
 from data.treasury_client  import TreasuryClient
 from data.derived          import DerivedCalculator
-from data                  import molit_client
+from data                  import molit_client, imf_gold
 from indicators.fed_supply       import FedSupplyGroup
 from indicators.treasury_channel import TreasuryChannelGroup
 from indicators.net_liquidity    import NetLiquidityGroup
@@ -62,7 +62,7 @@ OUTPUT_HTML  = "combined_dashboard.html"
 REC_OFFSET   = 5    # 경기침체 카테고리 번호를 5만큼 밀어 유동성(1~5)과 겹치지 않게 함
 INF_OFFSET   = 9    # 물가 카테고리 번호를 9만큼 밀어 유동성+침체(1~9)와 겹치지 않게 함
 INV_OFFSET   = 13   # 투자 카테고리 번호를 13만큼 밀어 앞의 세 대시보드(1~13)와 겹치지 않게 함
-KR_OFFSET    = 16   # 한국 카테고리 번호를 16만큼 밀어 앞의 네 대시보드(1~16)와 겹치지 않게 함
+KR_OFFSET    = INV_OFFSET + max(inv_cfg.CATEGORY_META)   # 한국 카테고리는 투자 카테고리 바로 뒤부터 (투자에 카테고리가 늘어도 안 겹침)
 KR_CACHE     = Path("kr_cache.pkl")   # 한국 데이터 주간 저장분 (GitHub Actions 캐시로 실행 간 유지)
 
 
@@ -267,7 +267,20 @@ class CombinedDashboard:
         else:
             raw["DEBT_SHORT_SHARE"] = pd.Series(dtype=float, name="DEBT_SHORT_SHARE")
 
+        raw.update(self._fetch_imf_gold())
         return raw
+
+    @staticmethod
+    def _fetch_imf_gold() -> dict[str, pd.Series]:
+        """IMF 국가별 중앙은행 금 보유량 → 2010년 이후 누적·12개월 순매입(톤). 키 불필요."""
+        try:
+            raw = imf_gold.load()
+            for key, s in raw.items():
+                print(f"  {'✅' if len(s) else '❌'}  {key:<36} [IMF IL]  {len(s)} pts")
+            return raw
+        except Exception as exc:
+            print(f"  ❌  {'중앙은행 금 보유량':<30} [IMF IL]  최종 실패 → {exc}")
+            return {m.key: pd.Series(dtype=float, name=m.key) for m in inv_cfg.CB_GOLD}
 
     # ── 한국 증시 수급 파이프라인 ─────────────────────────────────────
 
@@ -585,7 +598,7 @@ class CombinedDashboard:
         print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║         🏦📉💵📈  미국 경기·유동성·물가·투자 통합 모니터              ║
-║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭~⑯ 투자   ⑰~⑱ 한국 수급·부동산 ║
+║  ①~⑤ 유동성   ⑥~⑨ 경기침체   ⑩~⑬ 물가   ⑭~⑰ 투자   ⑱~⑲ 한국 수급·부동산 ║
 ╚══════════════════════════════════════════════════════════════════════╝""")
 
 

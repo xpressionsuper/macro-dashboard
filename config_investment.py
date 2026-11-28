@@ -110,6 +110,63 @@ GOV_DEBT: list[IndicatorMeta] = [
 ]
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  ④ 중앙은행 금 매입
+#  IMF International Liquidity 국가별 금 보유량 (data/imf_gold.py, 키 불필요)
+# ══════════════════════════════════════════════════════════════════════
+CB_GOLD_BASE_MONTH = "2009-12"   # 이 달 말 보유량을 0으로 두고 누적 (2010년부터 중앙은행이 순매수로 전환)
+
+# IMF 국가 코드 → 이름. 2010년 이후 순매입 상위 8개국, 차트 색은 이 순서대로 고정.
+# 첫 나라가 카드의 기준일을 정하므로 신고가 끊긴 러시아(2025-11~)가 아니라 중국을 맨 앞에 둠
+CB_GOLD_COUNTRIES: dict[str, tuple[str, str]] = {
+    "CHN": ("중국", "China"),
+    "RUS": ("러시아", "Russia"),
+    "TUR": ("튀르키예", "Turkey"),
+    "POL": ("폴란드", "Poland"),
+    "UZB": ("우즈베키스탄", "Uzbekistan"),
+    "IND": ("인도", "India"),
+    "KAZ": ("카자흐스탄", "Kazakhstan"),
+    "IRQ": ("이라크", "Iraq"),
+}
+
+_GOLD_SOURCE = "IMF International Liquidity (금 보유량, 순금 트로이온스 → 톤)"
+_GOLD_UP = ("달러 자산 의존을 줄이려는 외환보유액 다변화, 제재·자산동결 위험 회피(2022년 러시아 외환보유액 동결 이후 특히 부각), "
+            "자국 통화 신뢰 보강 목적으로 중앙은행이 금을 사들일 때 늘어납니다. 꾸준한 매입은 금 가격의 하방을 받쳐주는 수요로 해석됩니다.")
+_GOLD_DOWN = ("외환보유액이 부족해 금을 팔아 달러를 마련하거나(환율 방어), 금 가격 급등기에 차익을 실현할 때 줄어듭니다. "
+              "우즈베키스탄·카자흐스탄처럼 국내 금광 생산분을 사들였다가 시세에 따라 되파는 나라는 매달 출렁임이 큽니다.")
+_CUM_DESC = ("IMF에 각국 중앙은행이 신고한 금 보유량을 2009년 말과 비교한 값입니다. 2010년부터 쌓아 온 순매입량이라 보면 됩니다. "
+             "세계금협회(WGC)는 신고되지 않은 매입까지 추정해 합치지만, 이 차트는 신고된 수치만 씁니다. "
+             "그래서 미보고 매입이 많은 2022년 이후 국가 합계는 WGC 집계보다 작게 나옵니다. "
+             "러시아는 2025년 말 이후 신고가 끊겨 선이 멈춰 있고, 튀르키예는 시중은행이 맡긴 금과 스와프 물량이 섞여 있어 출렁임이 큽니다. "
+             "각국 신고가 IMF에 반영되기까지 보통 1~2개월이 걸립니다.")
+_12M_DESC = ("같은 금 보유량을 1년 전 같은 달과 비교한 값으로, 그 나라가 최근 1년 동안 순매입한 양입니다. "
+             "누적 차트의 기울기를 숫자로 바꾼 것이라 매입 속도가 빨라지는지 느려지는지 보기 좋습니다. 0 아래면 1년 동안 순매도했다는 뜻입니다.")
+
+
+def _gold(kind: str, code: str, idx: int) -> IndicatorMeta:
+    name, name_en = CB_GOLD_COUNTRIES[code]
+    first = idx == 0   # 설명은 차트당 한 번만 (나머지 나라는 같은 설명이라 비워 둠)
+    if first:
+        name_en = "By Country"   # 첫 지표의 영문명이 차트 부제로 쓰임
+    if kind == "CUM":
+        return IndicatorMeta(
+            key=f"CB_GOLD_CUM_{code}", name_ko=name, name_en=f"{name_en} Central Bank Gold — Cumulative Net Purchases since 2010",
+            description=_CUM_DESC if first else "", direction="↑금 보유 확대", source=_GOLD_SOURCE, category=4,
+            unit="t", chg_as_point=True, when_up=_GOLD_UP, when_down=_GOLD_DOWN,
+        )
+    return IndicatorMeta(
+        key=f"CB_GOLD_12M_{code}", name_ko=f"{name} (12개월)", name_en=f"{name_en} Central Bank Gold — 12-Month Net Purchases",
+        description=_12M_DESC if first else "", direction="↑매입 속도 가속", source=_GOLD_SOURCE, category=4,
+        unit="t", chg_as_point=True, when_up=_GOLD_UP, when_down=_GOLD_DOWN,
+    )
+
+
+CB_GOLD: list[IndicatorMeta] = (
+    [_gold("CUM", c, i) for i, c in enumerate(CB_GOLD_COUNTRIES)]
+    + [_gold("12M", c, i) for i, c in enumerate(CB_GOLD_COUNTRIES)]
+)
+
+
 CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
     1: (
         "① 밸류에이션 지표",
@@ -126,6 +183,11 @@ CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
         "미국 연방정부 총부채와 단기·장기 만기 구성",
         GOV_DEBT,
     ),
+    4: (
+        "④ 중앙은행 금 매입",
+        "각국 중앙은행이 IMF에 신고한 금 보유량 기준 2010년 이후 누적 순매입과 최근 12개월 순매입 (톤, 월간)",
+        CB_GOLD,
+    ),
 }
 
-ALL_INDICATORS: list[IndicatorMeta] = VALUATION + SENTIMENT + GOV_DEBT
+ALL_INDICATORS: list[IndicatorMeta] = VALUATION + SENTIMENT + GOV_DEBT + CB_GOLD
