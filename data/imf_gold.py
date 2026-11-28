@@ -58,12 +58,14 @@ def build(holdings: pd.Series, base_month: str) -> pd.Series:
 
 def load() -> dict[str, pd.Series]:
     """지표 키 → 시계열. 실패한 나라는 빈 시리즈."""
-    holdings = fetch_holdings(list(inv_cfg.CB_GOLD_COUNTRIES))
+    groups = inv_cfg.CB_GOLD_GROUPS
+    holdings = fetch_holdings(sorted({c for countries in groups.values() for c in countries}))
     raw = {}
-    for code in inv_cfg.CB_GOLD_COUNTRIES:
-        key = f"CB_GOLD_CUM_{code}"
-        raw[key] = (build(holdings[code], inv_cfg.CB_GOLD_BASE_MONTH) if code in holdings
-                    else pd.Series(dtype=float)).rename(key)
+    for prefix, countries in groups.items():
+        for code in countries:
+            key = f"{prefix}{code}"
+            raw[key] = (build(holdings[code], inv_cfg.CB_GOLD_BASE_MONTH) if code in holdings
+                        else pd.Series(dtype=float)).rename(key)
     return raw
 
 

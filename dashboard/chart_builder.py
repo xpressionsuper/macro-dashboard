@@ -48,8 +48,9 @@ COMBINED_CHARTS: dict[str, list[str]] = {
     "PCE_ALL":  ["PCE_CORE"],
     # 투자 ③ 정부부채: 단기·장기 국채 잔액
     "DEBT_SHORT": ["DEBT_LONG"],
-    # 투자 ④ 중앙은행 금: 8개국 누적 순매입 한 차트
+    # 투자 ④ 중앙은행 금: 순매입 상위 8개국 한 차트 / GDP 상위 10개국 한 차트
     "CB_GOLD_CUM_CHN": [f"CB_GOLD_CUM_{c}" for c in ("RUS", "TUR", "POL", "UZB", "IND", "KAZ", "IRQ")],
+    "CB_GOLD_GDP_USA": [f"CB_GOLD_GDP_{c}" for c in ("CHN", "DEU", "JPN", "GBR", "IND", "FRA", "RUS", "ITA", "CAN")],
     # 한국 ①: 외국인·기관·개인·기타법인 한 차트 / ②: 기관 세부 7개 한 차트
     "KR_FOREIGN_NET": ["KR_INST_NET", "KR_INDIV_NET", "KR_CORP_NET"],
     "KR_PENSION_NET": ["KR_SECURITIES_NET", "KR_TRUST_NET", "KR_PE_NET",
@@ -70,6 +71,7 @@ SLOT_TITLES: dict[str, str] = {
     "PCE_ALL":        "PCE 물가 (헤드라인 · 근원, YoY)",
     "DEBT_SHORT":     "국채 잔액 (단기 · 장기)",
     "CB_GOLD_CUM_CHN": "국가별 중앙은행 금 누적 순매입 (2010년~, 톤)",
+    "CB_GOLD_GDP_USA": "GDP 상위 10개국 중앙은행 금 누적 순매입 (2010년~, 톤)",
     "KR_FOREIGN_NET": "외국인 누적 순매수",
     "KR_PENSION_NET": "기관 세부 수급",
     "KR_BOP_TOTAL_NET": "외국인 증권투자자금 유출입 (누적, 달러)",
@@ -78,7 +80,7 @@ SLOT_TITLES: dict[str, str] = {
 }
 # 지표 데이터가 벤치마크(S&P500·금)보다 짧아 앞부분이 비는 차트 — 가로축을 지표 기간으로 자름
 # (FRED의 ICE BofA 스프레드는 최근 약 3년치만 공개)
-CROP_TO_DATA: set[str] = {"HY_OAS", "CB_GOLD_CUM_CHN"}
+CROP_TO_DATA: set[str] = {"HY_OAS", "CB_GOLD_CUM_CHN", "CB_GOLD_GDP_USA"}
 # 단독으로 그리지 않을 (합친 차트에 종속될) 지표
 SKIP_SOLO: set[str] = set().union(*COMBINED_CHARTS.values())
 
@@ -189,6 +191,8 @@ class ChartBuilder:
             if r.series.empty:
                 continue
 
+            # 9번째 선부터는 색이 처음부터 다시 돌므로 점선으로 구분 (팔레트는 8색까지만 검증됨)
+            dash   = "dot" if self._color_idx >= len(COLORS) else "solid"
             color  = self._next_color()
             series = r.series
             unit   = r.unit
@@ -199,7 +203,7 @@ class ChartBuilder:
                     y=series.values,
                     name=r.name_ko,
                     mode="lines",
-                    line=dict(color=color, width=2),
+                    line=dict(color=color, width=2, dash=dash),
                     fill="none",
                     hovertemplate=(
                         f"<b>{r.name_ko}</b><br>"
