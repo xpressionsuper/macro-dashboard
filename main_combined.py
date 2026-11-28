@@ -64,6 +64,9 @@ INF_OFFSET   = 9    # 물가 카테고리 번호를 9만큼 밀어 유동성+침
 INV_OFFSET   = 13   # 투자 카테고리 번호를 13만큼 밀어 앞의 세 대시보드(1~13)와 겹치지 않게 함
 KR_OFFSET    = INV_OFFSET + max(inv_cfg.CATEGORY_META)   # 한국 카테고리는 투자 카테고리 바로 뒤부터 (투자에 카테고리가 늘어도 안 겹침)
 KR_CACHE     = Path("kr_cache.pkl")   # 한국 데이터 주간 저장분 (GitHub Actions 캐시로 실행 간 유지)
+# 한국 주식 수급·부동산 켜기/끄기. False면 수집·진단·표시를 모두 건너뜀 (config_korea.py·수집 코드·API 키는 그대로 둠).
+# 다시 켜려면 True로 바꾸면 됨
+KR_ENABLED   = False
 
 
 class CombinedDashboard:
@@ -89,7 +92,7 @@ class CombinedDashboard:
 
         print("[4/8]  투자·한국 데이터 수집")
         inv_raw = self._collect_investment_data()
-        kr_raw  = self._load_korea_data()
+        kr_raw  = self._load_korea_data() if KR_ENABLED else {}
         print(f"       수집 완료: {len(inv_raw) + len(kr_raw)}개 시리즈\n")
 
         print("[5/8]  파생 지표 계산 (유동성 파생 + 물가 YoY 변환)")
@@ -112,7 +115,8 @@ class CombinedDashboard:
         rec_results = self._run_recession_diagnosis(rec_raw, rec_released)
         inf_results = self._run_generic_diagnosis(inf_raw, inf_cfg.CATEGORY_META, inf_released)
         inv_results = self._run_generic_diagnosis(inv_raw, inv_cfg.CATEGORY_META, inv_released)
-        kr_results  = self._run_generic_diagnosis(kr_raw, kr_cfg.CATEGORY_META)
+        kr_meta     = kr_cfg.CATEGORY_META if KR_ENABLED else {}
+        kr_results  = self._run_generic_diagnosis(kr_raw, kr_meta)
         for r in rec_results:
             r.category += REC_OFFSET
         for r in inf_results:
@@ -138,7 +142,7 @@ class CombinedDashboard:
             **{cat + REC_OFFSET: meta for cat, meta in rec_cfg.CATEGORY_META.items()},
             **{cat + INF_OFFSET: meta for cat, meta in inf_cfg.CATEGORY_META.items()},
             **{cat + INV_OFFSET: meta for cat, meta in inv_cfg.CATEGORY_META.items()},
-            **{cat + KR_OFFSET: meta for cat, meta in kr_cfg.CATEGORY_META.items()},
+            **{cat + KR_OFFSET: meta for cat, meta in kr_meta.items()},
         }
 
         print("\n[7/8]  차트 생성")
@@ -157,7 +161,7 @@ class CombinedDashboard:
                 ("경기침체", [cat + REC_OFFSET for cat in rec_cfg.CATEGORY_META.keys()]),
                 ("물가", [cat + INF_OFFSET for cat in inf_cfg.CATEGORY_META.keys()]),
                 ("투자", [cat + INV_OFFSET for cat in inv_cfg.CATEGORY_META.keys()]),
-                ("한국", [cat + KR_OFFSET for cat in kr_cfg.CATEGORY_META.keys()]),
+                *([("한국", [cat + KR_OFFSET for cat in kr_meta.keys()])] if KR_ENABLED else []),
             ],
             top_panel=capitulation.render_panel(merged_raw),
             top_nav=("연준 항복 판정", "fed-capitulation"),
