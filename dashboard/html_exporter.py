@@ -542,6 +542,9 @@ class HtmlExporter:
         chg = cls._fmt_chg(r)
         if not chg:
             return ""
+        # 중앙은행 금(톤)은 대부분의 나라가 매달 그대로라 '+0.00 t'가 줄줄이 붙으므로 변화 없으면 생략
+        if r.unit == "t" and round(r.chg_disp, 2) == 0:
+            return ""
         return f'<span class="row-chg {"up" if r.chg_disp >= 0 else "down"}">{chg}</span>'
 
     @staticmethod
