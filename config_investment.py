@@ -139,32 +139,21 @@ _CUM_DESC = ("IMF에 각국 중앙은행이 신고한 금 보유량을 2009년 �
              "그래서 미보고 매입이 많은 2022년 이후 국가 합계는 WGC 집계보다 작게 나옵니다. "
              "러시아는 2025년 말 이후 신고가 끊겨 선이 멈춰 있고, 튀르키예는 시중은행이 맡긴 금과 스와프 물량이 섞여 있어 출렁임이 큽니다. "
              "각국 신고가 IMF에 반영되기까지 보통 1~2개월이 걸립니다.")
-_12M_DESC = ("같은 금 보유량을 1년 전 같은 달과 비교한 값으로, 그 나라가 최근 1년 동안 순매입한 양입니다. "
-             "누적 차트의 기울기를 숫자로 바꾼 것이라 매입 속도가 빨라지는지 느려지는지 보기 좋습니다. 0 아래면 1년 동안 순매도했다는 뜻입니다.")
 
 
-def _gold(kind: str, code: str, idx: int) -> IndicatorMeta:
+def _gold(code: str, idx: int) -> IndicatorMeta:
     name, name_en = CB_GOLD_COUNTRIES[code]
     first = idx == 0   # 설명은 차트당 한 번만 (나머지 나라는 같은 설명이라 비워 둠)
     if first:
         name_en = "By Country"   # 첫 지표의 영문명이 차트 부제로 쓰임
-    if kind == "CUM":
-        return IndicatorMeta(
-            key=f"CB_GOLD_CUM_{code}", name_ko=name, name_en=f"{name_en} Central Bank Gold — Cumulative Net Purchases since 2010",
-            description=_CUM_DESC if first else "", direction="↑금 보유 확대", source=_GOLD_SOURCE, category=4,
-            unit="t", chg_as_point=True, when_up=_GOLD_UP, when_down=_GOLD_DOWN,
-        )
     return IndicatorMeta(
-        key=f"CB_GOLD_12M_{code}", name_ko=f"{name} (12개월)", name_en=f"{name_en} Central Bank Gold — 12-Month Net Purchases",
-        description=_12M_DESC if first else "", direction="↑매입 속도 가속", source=_GOLD_SOURCE, category=4,
+        key=f"CB_GOLD_CUM_{code}", name_ko=name, name_en=f"{name_en} Central Bank Gold — Cumulative Net Purchases since 2010",
+        description=_CUM_DESC if first else "", direction="↑금 보유 확대", source=_GOLD_SOURCE, category=4,
         unit="t", chg_as_point=True, when_up=_GOLD_UP, when_down=_GOLD_DOWN,
     )
 
 
-CB_GOLD: list[IndicatorMeta] = (
-    [_gold("CUM", c, i) for i, c in enumerate(CB_GOLD_COUNTRIES)]
-    + [_gold("12M", c, i) for i, c in enumerate(CB_GOLD_COUNTRIES)]
-)
+CB_GOLD: list[IndicatorMeta] = [_gold(c, i) for i, c in enumerate(CB_GOLD_COUNTRIES)]
 
 
 CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
@@ -185,7 +174,7 @@ CATEGORY_META: dict[int, tuple[str, str, list[IndicatorMeta]]] = {
     ),
     4: (
         "④ 중앙은행 금 매입",
-        "각국 중앙은행이 IMF에 신고한 금 보유량 기준 2010년 이후 누적 순매입과 최근 12개월 순매입 (톤, 월간)",
+        "각국 중앙은행이 IMF에 신고한 금 보유량 기준 2010년 이후 누적 순매입 (톤, 월간)",
         CB_GOLD,
     ),
 }

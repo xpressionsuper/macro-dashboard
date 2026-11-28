@@ -276,7 +276,7 @@ class CombinedDashboard:
 
     @staticmethod
     def _fetch_imf_gold() -> dict[str, pd.Series]:
-        """IMF 국가별 중앙은행 금 보유량 → 2010년 이후 누적·12개월 순매입(톤). 키 불필요."""
+        """IMF 국가별 중앙은행 금 보유량 → 2010년 이후 누적 순매입(톤). 키 불필요."""
         try:
             raw = imf_gold.load()
             for key, s in raw.items():

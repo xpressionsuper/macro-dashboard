@@ -1,11 +1,10 @@
 """
-data/imf_gold.py ─ IMF International Liquidity(IL) 국가별 중앙은행 금 보유량 → 누적·12개월 순매입(톤)
+data/imf_gold.py ─ IMF International Liquidity(IL) 국가별 중앙은행 금 보유량 → 누적 순매입(톤)
 =====================================================================
 IMF가 각국 신고를 받아 매달 갱신하는 금 보유량(RGV_REVS, 순금 트로이온스)을
-키 없이 SDMX API로 받아, 국가별로
-  · 누적 순매입: GOLD_BASE_MONTH 말 보유량 대비 증감 (그 달 이전 기록이 없으면 첫 기록 대비)
-  · 12개월 순매입: 1년 전 같은 달 보유량 대비 증감
-을 톤 단위로 만듭니다. 미보고 매입 추정치가 들어간 WGC 집계와는 다릅니다.
+키 없이 SDMX API로 받아, 국가별로 CB_GOLD_BASE_MONTH 말 보유량 대비 증감
+(그 달 이전 기록이 없으면 첫 기록 대비)을 톤 단위로 만듭니다.
+미보고 매입 추정치가 들어간 WGC 집계와는 다릅니다.
 
 자체 점검: python -m data.imf_gold
 """
@@ -49,15 +48,12 @@ def fetch_holdings(countries: list[str]) -> dict[str, pd.Series]:
     return out
 
 
-def build(holdings: pd.Series, base_month: str) -> tuple[pd.Series, pd.Series]:
-    """보유량(톤) → (누적 순매입, 12개월 순매입). 둘 다 base_month 이후 구간만."""
+def build(holdings: pd.Series, base_month: str) -> pd.Series:
+    """보유량(톤) → base_month 이후 누적 순매입."""
     s = holdings.dropna().sort_index()
     before = s[:base_month]
     base = before.iloc[-1] if not before.empty else s.iloc[0]
-    cum = (s - base)[base_month:]
-    # 줄 수가 아닌 날짜 기준 12개월 — 중간에 빠진 달이 있어도 정확히 1년 전과 비교
-    yoy = (s - s.shift(freq=pd.DateOffset(months=12)).reindex(s.index)).dropna()[base_month:]
-    return cum, yoy
+    return (s - base)[base_month:]
 
 
 def load() -> dict[str, pd.Series]:
@@ -65,21 +61,16 @@ def load() -> dict[str, pd.Series]:
     holdings = fetch_holdings(list(inv_cfg.CB_GOLD_COUNTRIES))
     raw = {}
     for code in inv_cfg.CB_GOLD_COUNTRIES:
-        cum_key, yoy_key = f"CB_GOLD_CUM_{code}", f"CB_GOLD_12M_{code}"
-        if code in holdings:
-            cum, yoy = build(holdings[code], inv_cfg.CB_GOLD_BASE_MONTH)
-            raw[cum_key], raw[yoy_key] = cum.rename(cum_key), yoy.rename(yoy_key)
-        else:
-            raw[cum_key] = pd.Series(dtype=float, name=cum_key)
-            raw[yoy_key] = pd.Series(dtype=float, name=yoy_key)
+        key = f"CB_GOLD_CUM_{code}"
+        raw[key] = (build(holdings[code], inv_cfg.CB_GOLD_BASE_MONTH) if code in holdings
+                    else pd.Series(dtype=float)).rename(key)
     return raw
 
 
 if __name__ == "__main__":
-    idx = pd.to_datetime(["2009-11-01", "2009-12-01", "2010-01-01", "2010-03-01", "2011-01-01", "2011-03-01"])
-    cum, yoy = build(pd.Series([90, 100, 110, 120, 150, 125], index=idx), "2009-12")
-    assert list(cum) == [0, 10, 20, 50, 25], list(cum)
-    assert list(yoy) == [40, 5], list(yoy)          # 2011-01 vs 2010-01, 2011-03 vs 2010-03 (2010-02 결측이어도 정확)
-    cum, _ = build(pd.Series([300.0, 310.0], index=idx[2:4]), "2009-12")   # 기준월 이전 기록 없음 → 첫 기록 대비
+    idx = pd.to_datetime(["2009-11-01", "2009-12-01", "2010-01-01", "2010-03-01", "2011-01-01"])
+    cum = build(pd.Series([90, 100, 110, 120, 150], index=idx), "2009-12")
+    assert list(cum) == [0, 10, 20, 50], list(cum)
+    cum = build(pd.Series([300.0, 310.0], index=idx[2:4]), "2009-12")   # 기준월 이전 기록 없음 → 첫 기록 대비
     assert list(cum) == [0, 10], list(cum)
     print("ok")
